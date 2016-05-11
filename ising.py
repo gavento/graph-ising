@@ -2,30 +2,16 @@ from cffi import FFI
 import numpy as np
 import networkx as nx
 
-cising_cached = None
-ffi_cached = None
 
-
-def cising():
-
-    if not cising_cached:
-        load_ffi()
-    return cising_cached
-
-
-def ffi():
-
-    if not ffi_cached:
-        load_ffi()
-    return ffi_cached
-    
+cising = None
+ffi = None
 
 def load_ffi():
 
-    global cising_cached, ffi_cached
+    global cising, ffi
 
-    ffi_cached = FFI()
-    ffi_cached.cdef("""
+    ffi = FFI()
+    ffi.cdef("""
         typedef uint64_t rand_t;
         typedef int32_t index_t;
         typedef int8_t spin_t;
@@ -51,15 +37,16 @@ def load_ffi():
         index_t ising_sweep_and_max_cluster(ising_state *s, uint32_t sweeps, spin_t value, double edge_prob);
         """)
 
-    cising_cached = ffi_cached.dlopen('./cising.so')
+    cising = ffi.dlopen('./cising.so')
+
+load_ffi()
 
 
 class IsingState(object):
 
     def __init__(self, graph, spins=None, seed=42, field=0.0, T=1.0, defer_init=False):
 
-#        self.graph = nx.MultiGraph(graph)
-        self.graph = graph
+        self.graph = graph # WARN: NOT A COPY!
         if spins is None:
             self.spins = np.array([1] * self.graph.order(), dtype='int8')
         else:
@@ -87,7 +74,7 @@ class IsingState(object):
         return IsingState(self.spins, self.graph, self.seed, self.field, self.T)
 
     def graph_to_internal(self):
-        "Call this whenever you modify self.graph, self.field or self.T before a call to any mc_*()"
+        "Call this whenever you modify self.graph before a call to any mc_*()"
 
         self.neigh_list = np.ndarray([2 * self.graph.size() + self.graph.order()], dtype='int32')
         self.neigh_offset = np.ndarray([self.graph.order()], dtype='int32')
@@ -119,16 +106,16 @@ class IsingState(object):
             
     def prepare_state(self):
 
-        state = ffi().new("ising_state *", {
+        state = ffi.new("ising_state *", {
             "n": self.n,
             "field": self.field,
             "T": self.T,
             "seed": self.seed,
-            "spins": ffi().cast("int8_t *", self.spins.ctypes.data),
-            "neigh_list": ffi().cast("int32_t *", self.neigh_list.ctypes.data),
-            "neigh_offset": ffi().cast("int32_t *", self.neigh_offset.ctypes.data),
-            "degree": ffi().cast("int32_t *", self.degree.ctypes.data),
-            "degree_sum": ffi().cast("int32_t *", self.degree_sum.ctypes.data),
+            "spins": ffi.cast("int8_t *", self.spins.ctypes.data),
+            "neigh_list": ffi.cast("int32_t *", self.neigh_list.ctypes.data),
+            "neigh_offset": ffi.cast("int32_t *", self.neigh_offset.ctypes.data),
+            "degree": ffi.cast("int32_t *", self.degree.ctypes.data),
+            "degree_sum": ffi.cast("int32_t *", self.degree_sum.ctypes.data),
             })
         return state
 
@@ -137,7 +124,7 @@ class IsingState(object):
         assert self.neigh_list is not None
 
         state = self.prepare_state()
-        r = cising().ising_mc_sweep(state)
+        r = cising.ising_mc_sweep(state)
         self.seed = state.seed
         return r
 
@@ -146,7 +133,7 @@ class IsingState(object):
         assert self.neigh_list is not None
 
         state = self.prepare_state()
-        r = cising().ising_max_cluster(state, value, edge_prob)
+        r = cising.ising_max_cluster(state, value, edge_prob)
         self.seed = state.seed
         return r
 
@@ -155,7 +142,7 @@ class IsingState(object):
         assert self.neigh_list is not None
 
         state = self.prepare_state()
-        r = cising().ising_sweep_and_max_cluster(state, sweeps, value, edge_prob)
+        r = cising.ising_sweep_and_max_cluster(state, sweeps, value, edge_prob)
         self.seed = state.seed
         return r
 
