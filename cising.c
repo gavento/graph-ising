@@ -148,7 +148,8 @@ index_t ising_mc_sweep(ising_state *s)
 /*
  * Recursive helper to compute the statistics of the cluster containing given point using DFS.
  * The cluster starts at spin 'v' and expands to adjacent spins of the same value.
- * Every edge is present with probability edge_prob.
+ * Every edge is present with probability edge_prob. Does NOT update the seed.
+ *
  * The auxiliary array 'visited' is assumed to contain no values 'mark'
  * before each clustre examination start.
  *
@@ -220,7 +221,10 @@ index_t ising_max_cluster_visit(ising_state *s, index_t v, index_t mark, index_t
 
 /*
  * Compute the statistics of all the clusters using ising_max_cluster_visit.
- * Only consider clusters of given value. Every edge is present with probability edge_prob.
+ * Only consider clusters of given value.
+ *
+ * Every edge is present with probability edge_prob.
+ * Does NOT update the seed (consequent runs will give the same result).
  *
  * Computes all cluster statistics into 'stats' if not NULL.
  *
@@ -256,19 +260,21 @@ index_t ising_max_cluster(ising_state *s, spin_t value, double edge_prob, ising_
         assert(max_size == max_stats->v_in);
     }
 
-    // Advance the seed (in case of recomputations)
-    get_rand(&s->seed);
     return max_size;
 }
 
 
 /*
- * Perform sweep 'sweeps' times and measure the cluster stats 'measurements' times,
- * summing all the numbers. 
- * Returns max. cluster size (resp. their sum if measurements > 1) after the sweeps.
+ * Perform sweep 'sweeps' times and measure the cluster stats 'measure' times,
+ * summing all the numbers.
+ *
+ * The seed is updated for all the sweeps, not for measurements (but they are performed with
+ * different seeds).
+ *
+ * Returns max. cluster size (resp. their sum if measure > 1) after the sweeps.
  * When max_stats != NULL, store cluster maximums (resp. their sums) there.
  */
-index_t ising_sweep_and_max_cluster(ising_state *s, uint32_t sweeps, uint32_t measurements, spin_t value,
+index_t ising_sweep_and_max_cluster(ising_state *s, uint32_t sweeps, uint32_t measure, spin_t value,
                                     double edge_prob, ising_cluster_stats *max_stats)
 {
 
@@ -278,7 +284,8 @@ index_t ising_sweep_and_max_cluster(ising_state *s, uint32_t sweeps, uint32_t me
     index_t sum = 0;
     ising_cluster_stats temp_max_stats;
 
-    for (int i = 0; i < measurements; i++) {
+    rand_t saved_seed = s->seed; // Save before measuring
+    for (int i = 0; i < measure; i++) {
 
         if (max_stats) {
             memset(&temp_max_stats, 0, sizeof(ising_cluster_stats));
@@ -289,10 +296,13 @@ index_t ising_sweep_and_max_cluster(ising_state *s, uint32_t sweeps, uint32_t me
         } else {
             sum += ising_max_cluster(s, value, edge_prob, NULL);
         }
+        get_rand(&s->seed); // Advance 'temporary' rand seed (restored below)
     }
+    s->seed = saved_seed; // Restore seed
 
     return sum;
 }
+
 
 int main_test()
 {
@@ -328,6 +338,7 @@ int main_test()
     for (int i = 0; i < 1000; i++) {
         index_t flips = ising_mc_sweep(&s);
         index_t csize = ising_max_cluster(&s, -1, 1.0, &stats);
+        assert(csize == stats.v_in);
         printf("Sweep: %d   flips: %d   stats: v_in=%d v_out_border=%d v_in_border=%d e_in=%d, e_border=%d\n",
                i, flips, stats.v_in, stats.v_out_border, stats.v_in_border, stats.e_in, stats.e_border);
     }

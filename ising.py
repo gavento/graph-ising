@@ -42,7 +42,7 @@ typedef struct {
 
 index_t ising_mc_sweep(ising_state *s);
 index_t ising_max_cluster(ising_state *s, spin_t value, double edge_prob, ising_cluster_stats *max_stats);
-index_t ising_sweep_and_max_cluster(ising_state *s, uint32_t sweeps, uint32_t measurements, spin_t value,
+index_t ising_sweep_and_max_cluster(ising_state *s, uint32_t sweeps, uint32_t measure, spin_t value,
                                     double edge_prob, ising_cluster_stats *max_stats);
 
 """)
@@ -232,36 +232,27 @@ class IsingState(object):
         return state
 
 
-    def mc_sweep(self):
 
-        assert self.neigh_list is not None
+    def mc_sweep_and_max_cluster(self, sweeps=1, measure=1, value=-1, edge_prob=1.0):
+        """
+        Run `sweeps` full sweeps over the spins, each in random permutation order,
+        updating the random seed each time.
 
-        state = self.prepare_state()
-        r = cising.ising_mc_sweep(state)
-        self.seed = state.seed
-        return r
-
-    def max_cluster(self, value=-1, edge_prob=1.0):
-
-        assert self.neigh_list is not None
-
-        state = self.prepare_state()
-        max_stats = ffi.new("ising_cluster_stats *")
-        r = cising.ising_max_cluster(state, value, edge_prob, max_stats)
-        self.seed = state.seed
-        assert r == max_stats.v_in
-        return ClusterStats(max_stats)
-
-    def mc_sweep_and_max_cluster(self, sweeps=10, measurements=1, value=-1, edge_prob=1.0):
+        Then measure maximal cluster (consisting of given spin `value`) statistics `measure` times
+        and return the averaged `ClusterStats` (zero when not measuring).
+        This part does not change the state seed, so e.g. calls `(sweeps=1, measure=0)` and 
+        `(sweeps=1, measure=100)` have the same effect on the state.
+        """
 
         assert self.neigh_list is not None
 
         state = self.prepare_state()
         sum_max_stats = ffi.new("ising_cluster_stats *")
-        r = cising.ising_sweep_and_max_cluster(state, sweeps, measurements, value, edge_prob, sum_max_stats)
+        r = cising.ising_sweep_and_max_cluster(state, sweeps, measure, value, edge_prob, sum_max_stats)
         self.seed = state.seed
+
         assert r == sum_max_stats.v_in
-        return ClusterStats(sum_max_stats, divide=measurements)
+        return ClusterStats(sum_max_stats, divide=float(max(measure, 1)))
 
 
 def test():
