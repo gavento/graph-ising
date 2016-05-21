@@ -6,7 +6,7 @@ import time
 
 
 def do_job(state, sweeps):
-    return state.mc_sweep_and_max_cluster(sweeps)
+    return state.mc_sweep_and_max_cluster(sweeps=sweeps)
 
 
 def test2():
@@ -28,20 +28,20 @@ def test2():
             inistate = ising.IsingState(graph=g, seed=iniseed, T=4.0, field=7.8) 
 	    state = inistate.copy()
             
-            print("Find transition state of inistate #",iniseed)
+            print("Find transition state of inistate ",inistate)
 
             for i in range(10000):
                 m = do_job(state, sweeps)
-                if state.max_cluster().v_in > 600 :
+                if m.v_in > 600 :
 		# guess TS is 1*sweeps back
-			print(state.max_cluster())
-		    	iters = i -1 
+			print(state, m)
+		    	iters = i + 1
                         print(iters)
 			break
 
 	    state= inistate.copy()
 
-            print("Evolve again inistate #",iniseed)	   
+            print("Evolve again inistate ",inistate)	   
             for i in range(iters):
                 m = do_job(state, sweeps)
 
