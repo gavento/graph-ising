@@ -278,7 +278,7 @@ index_t ising_sweep_and_max_cluster(ising_state *s, uint32_t sweeps, uint32_t me
     index_t sum = 0;
     ising_cluster_stats temp_max_stats;
 
-    for (int i = 0; i < sweeps; i++) {
+    for (int i = 0; i < measurements; i++) {
 
         if (max_stats) {
             memset(&temp_max_stats, 0, sizeof(ising_cluster_stats));
