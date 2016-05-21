@@ -61,7 +61,7 @@ class ClusterStats(object):
         self.e_in = ising_cluster_stats.e_in / divide
         self.e_border = ising_cluster_stats.e_border / divide
 
-    def __str__(self):
+    def __repr__(self):
         return "<Stats: v_in=%s, v_in_border=%s, v_out_border=%s, e_in=%s, e_border=%s >" % (
                 self.v_in, self.v_in_border, self.v_out_border, self.e_in, self.e_border)
 
