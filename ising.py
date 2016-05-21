@@ -69,7 +69,7 @@ class IsingState(object):
 
     def __init__(self, n=None, graph=None, spins=None, seed=42, field=0.0, T=1.0):
 
-        if spins == None:
+        if spins is None:
             if n != None:
                 self.spins = np.ones([n], dtype='int8')
             elif graph != None:
@@ -97,6 +97,20 @@ class IsingState(object):
 
         if graph:
             self.set_nx_graph(graph)
+
+
+    def __repr__(self):
+        return "<IsingState %d spins, seed %d>" % (self.n, self.seed)
+
+
+    def __eq__(self, other):
+        assert isinstance(other, IsingState)
+        return (self.n == other.n and 
+                self.seed == other.seed and
+                self.T == other.T and
+                self.field == other.field and
+                all(self.spins == other.spins) and
+                sorted(self.get_edge_list()) == sorted(other.get_edge_list()))
 
 
     def copy(self):
