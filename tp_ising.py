@@ -10,10 +10,25 @@ def do_job(state, sweeps):
 
 
 def test():
-    n = 10000
-    popsize = 100
+
+    # Test 0
+    s = ising.IsingState(n=5, spins=[-1, -1, -1, 1, 1])
+    s.set_edge_list([(0,1), (1,2), (2,3), (3,4), (4,0)])
+    print(s.neigh_list)
+    print(s.neigh_offset)
+    print(s.degree)
+    stat = s.max_cluster()
+    assert stat.v_in == 3
+    assert stat.v_in_border == 2
+    assert stat.v_out_border == 2
+    assert stat.e_in == 2
+    assert stat.e_border == 2
+
+    # Test 2
+    n = 1000
+    popsize = 1
     sweeps = 10
-    iters = 100
+    iters = 200
 
     print("Gen g ...")
     t0 = time.time()
@@ -22,13 +37,7 @@ def test():
 
     print("Gen pop ...")
     t0 = time.time()
-    pop = [ising.IsingState(g, seed=i, T=3.0, field=1.5, defer_init=True) for i in range(popsize)]
-    print("  Time: %f" % (time.time() - t0))
-
-    print("Init pop ...") # defer_init=True and separate state.graph_to_internal() to measure time
-    t0 = time.time()
-    for state in pop:
-        state.graph_to_internal()
+    pop = [ising.IsingState(graph=g, seed=i, T=6.0, field=1.5) for i in range(popsize)]
     print("  Time: %f" % (time.time() - t0))
 
 
@@ -42,10 +51,18 @@ def test():
 
     # Multithreaded
     if True:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=16) as executor:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
             for i in range(iters):
                 jobs = [executor.submit(do_job, state, sweeps) for state in pop]
-                m = np.mean([j.result() for j in jobs])
+                m = np.mean([j.result().v_in for j in jobs])
+
+    state = pop[0]
+    print(state.mc_sweep_and_max_cluster(sweeps=0, measurements=1))
+    print(state.mc_sweep_and_max_cluster(sweeps=0, measurements=1, edge_prob=0.8))
+    print(state.mc_sweep_and_max_cluster(sweeps=0, measurements=100, edge_prob=0.8))
+    print(state.mc_sweep_and_max_cluster(sweeps=100))
+    print(state.max_cluster(edge_prob=0.8))
+
 
     print("  Time: %f" % (time.time() - t0))
 

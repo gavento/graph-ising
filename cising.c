@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <math.h>
+#include <assert.h>
 #include <alloca.h>
 
 #define MIN(a,b) ((a)<(b)?(a):(b))
@@ -78,7 +79,7 @@ typedef struct {
     double field;        // External dield
     double T;            // Temperature
     rand_t seed;         // Random seed. Modified with computation.
-    index_t *neigh_list; // Neighbor lists for all vertices. Every list is -1 terminated.
+    index_t *neigh_list; // Neighbor lists for all vertices. Every list is degree[v] long.
     index_t *neigh_offset; // For every node starting offset in neigh_list
     index_t *degree;     // Node degrees (informational)
     index_t *degree_sum; // Sum of all degrees up to and incl. this node
@@ -107,8 +108,10 @@ inline index_t ising_mc_update(ising_state *s, index_t index)
     index_t flipped = 0;
 
     index_t sum = 0;
-    for (index_t *p_neigh = s->neigh_list + s->neigh_offset[index]; *p_neigh >= 0; p_neigh++)
-        sum += s->spins[*p_neigh];
+    for (index_t i = 0; i < s->degree[index]; i++) {
+        index_t u = s->neigh_list[s->neigh_offset[index] + i];
+        sum += s->spins[u];
+    }
 
     double deltaE = (1 + 2 * s->spins[index]) * (s->field - sum);
     if (deltaE > 0) {
@@ -149,7 +152,8 @@ index_t ising_mc_sweep(ising_state *s)
  * The auxiliary array 'visited' is assumed to contain no values 'mark'
  * before each clustre examination start.
  *
- * Computes all cluster statistics into 'stats'.
+ * Computes all cluster statistics into 'stats' if not NULL,
+ * returns the size of the cluster.
  *
  * Warning: May overflow the stack during recursion.
  */
@@ -164,12 +168,13 @@ index_t ising_max_cluster_visit(ising_state *s, index_t v, index_t mark, index_t
     if (stats)
         stats->v_in ++;
 
-    for (index_t *p_neigh = s->neigh_list + s->neigh_offset[v]; *p_neigh >= 0; p_neigh++) {
+    for (index_t i = 0; i < s->degree[v]; i++) {
 
-        index_t u = *p_neigh;
+        index_t u = s->neigh_list[s->neigh_offset[v] + i];
 
-        if (!get_rand_edge_presence(v, u, edge_prob, s->seed))
+        if (!get_rand_edge_presence(v, u, edge_prob, s->seed)) {
             continue; // Edge considered non-existent (is that right?)
+        }
 
         if (s->spins[u] == value) { // Internal vertex
 
@@ -225,26 +230,30 @@ index_t ising_max_cluster(ising_state *s, spin_t value, double edge_prob, ising_
 {
     index_t *visited = memset(alloca(sizeof(index_t[s->n])), 0, sizeof(index_t[s->n]));
     ising_cluster_stats cur_stats;
-    if (!max_stats)
-        max_stats = alloca(sizeof(ising_cluster_stats));
-    memset(max_stats, 0, sizeof(ising_cluster_stats));
-    index_t max_size = 0;
+    if (max_stats)
+        memset(max_stats, 0, sizeof(ising_cluster_stats));
+    index_t max_size = 0, size;
 
     for (index_t v = 0; v < s->n; v++) {
 
         if ((visited[v] == 0) && (s->spins[v] == value)) {
 
-            memset(&cur_stats, 0, sizeof(cur_stats));
-            ising_max_cluster_visit(s, v, v + 1, visited, edge_prob, &cur_stats);
-
-            max_size = MAX(cur_stats.v_in, max_size);
-#define MSTAT(attr) max_stats->attr = MAX(max_stats->attr, cur_stats.attr)
             if (max_stats) {
+                memset(&cur_stats, 0, sizeof(cur_stats));
+                size = ising_max_cluster_visit(s, v, v + 1, visited, edge_prob, &cur_stats);
+#define MSTAT(attr) max_stats->attr = MAX(max_stats->attr, cur_stats.attr)
                 MSTAT(v_in); MSTAT(e_in); MSTAT(e_border); MSTAT(v_out_border); MSTAT(v_in_border);
-            }
 #undef MSTAT
+            } else {
+                size = ising_max_cluster_visit(s, v, v + 1, visited, edge_prob, NULL);
+            }
+            max_size = MAX(size, max_size);
 
         }
+    }
+
+    if (max_stats) {
+        assert(max_size == max_stats->v_in);
     }
 
     // Advance the seed (in case of recomputations)
@@ -297,6 +306,8 @@ int main_test()
         .seed = 42,
         .neigh_list = malloc(sizeof(index_t[30 * n])),
         .neigh_offset = malloc(sizeof(index_t[n])),
+        .degree = malloc(sizeof(index_t[n])),
+        .degree_sum = malloc(sizeof(index_t[n])),
     };
 
     uint32_t nlpos = 0;
@@ -308,13 +319,19 @@ int main_test()
                 s.neigh_list[nlpos++] = (i + d + n) % n;
             }
         }
-        s.neigh_list[nlpos++] = -1;
+        s.degree[i] = 20;
+        s.degree_sum[i] = 20 * i;
     }
+
+    ising_cluster_stats stats;
 
     for (int i = 0; i < 1000; i++) {
         index_t flips = ising_mc_sweep(&s);
-//        index_t csize = ising_max_cluster(&s, -1, 1, &cluster_seed);
-        //printf("Sweep: %d   flips: %d   max size: %d\n", i, flips, csize);
+        index_t csize = ising_max_cluster(&s, -1, 1.0, &stats);
+        printf("Sweep: %d   flips: %d   stats: v_in=%d v_out_border=%d v_in_border=%d e_in=%d, e_border=%d\n",
+               i, flips, stats.v_in, stats.v_out_border, stats.v_in_border, stats.e_in, stats.e_border);
     }
+
+
     return 0;
 }
