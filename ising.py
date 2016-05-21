@@ -1,6 +1,8 @@
 from cffi import FFI
 import numpy as np
 import networkx as nx
+import json
+import pickle
 
 
 cising = None
@@ -107,6 +109,30 @@ class IsingState(object):
         return IS
 
 
+    def save(self, fname):
+
+        with open(fname, 'wb') as f:
+            pickle.dump(self, f)
+#            json.dump({
+#                'spins': list(self.spins),
+#                'edges': self.get_edge_list(),
+#                'seed': self.seed,
+#                'field': self.field,
+#                'T': self.T,
+#                }, f)
+
+
+    @classmethod
+    def load(cls, fname):
+
+        with open(fname, 'rb') as f:
+            return pickle.load(f)
+#            d = json.load(f)
+#            IS = cls(spins=d['spins'], seed=d['seed'], field=d['field'], T=d['T'])
+#            IS.set_edge_list(d['edges'])
+#            return IS
+
+
     def get_edge_list(self):
         """
         Return a list of edges [(u,v), ...] based on the internal
@@ -114,7 +140,7 @@ class IsingState(object):
         """
         el = []
         for v in range(self.n):
-            for i in range(self.degree(v)):
+            for i in range(self.degree[v]):
                 u = self.neigh_list[self.neigh_offset[v] + i]
                 if u < v:
                     el.append((u, v))
@@ -141,6 +167,7 @@ class IsingState(object):
 
         self.degree = np.zeros([self.n], dtype='int32')
 
+        edge_list = list(edge_list)
         for e in edge_list:
             u, v = tuple(e)
             self.degree[u] += 1
@@ -148,7 +175,7 @@ class IsingState(object):
         
         self.degree_sum = np.cumsum(self.degree, out=self.degree_sum, dtype='int32')
         self.neigh_offset = np.array(np.concatenate([[0], self.degree_sum[:-1]]), dtype='int32')
-        self.neigh_list = (-1) * np.ones([2 * len(edge_list)], dtype='int32')
+        self.neigh_list = (-1) * np.ones([self.degree_sum[-1]], dtype='int32')
 
         offsets = self.neigh_offset.copy()
         for e in edge_list:

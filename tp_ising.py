@@ -57,11 +57,11 @@ def test():
                 m = np.mean([j.result().v_in for j in jobs])
 
     state = pop[0]
+    state.mc_sweep_and_max_cluster(sweeps=1000)
     print(state.mc_sweep_and_max_cluster(sweeps=0, measurements=1))
     print(state.mc_sweep_and_max_cluster(sweeps=0, measurements=1, edge_prob=0.8))
     print(state.mc_sweep_and_max_cluster(sweeps=0, measurements=100, edge_prob=0.8))
-    print(state.mc_sweep_and_max_cluster(sweeps=100))
-    print(state.max_cluster(edge_prob=0.8))
+    print(state.max_cluster(edge_prob=1.0))
 
 
     print("  Time: %f" % (time.time() - t0))
