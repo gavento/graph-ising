@@ -129,16 +129,64 @@ inline index_t ising_mc_update(ising_state *s, index_t index)
 
 
 /*
- * Update all the spins using a random permutation, updating the state seed.
+ * Update a given number of spins choosing every one randomly, updating the state seed.
+ * The spins to update are chosen randomly and independently (unlike in case of sweeps).
+ * Returns the total number of flipped spins.
  */
-index_t ising_mc_sweep(ising_state *s)
+index_t ising_mc_update_random(ising_state *s, index_t updates)
 {
     index_t flipped = 0;
 
+    for (index_t i = 0; i < updates; i++) {
+        index_t spin = get_rand(&s->seed) % s->n;
+        flipped += ising_mc_update(s, spin);
+    }
+
+    return flipped;
+}
+
+
+/*
+ * Update all the spins using a random permutation 'sweeps' times, updating the state seed.
+ * Returns the number of flipped spins.
+ */
+index_t ising_mc_sweep(ising_state *s, index_t sweeps)
+{
+    index_t flipped = 0;
     index_t *perm = alloca(sizeof(index_t[s->n]));
-    get_rand_perm(s->n, perm, &s->seed);
-    for (index_t i = 0; i < s->n; i++) {
-        flipped += ising_mc_update(s, perm[i]);
+
+    for (int swi = 0; swi < sweeps; swi++) {
+        get_rand_perm(s->n, perm, &s->seed);
+        for (index_t i = 0; i < s->n; i++) {
+            flipped += ising_mc_update(s, perm[i]);
+        }
+    }
+
+    return flipped;
+}
+
+
+/*
+ * Update a given number of spins using a part of a random permutation, updating the state seed.
+ * When updates > N spins, first does several full sweeps and then updates the remaining
+ * (updates % N) spins.
+ * Returns the total number of flipped spins.
+ */
+index_t ising_mc_sweep_partial(ising_state *s, index_t updates)
+{
+    index_t flipped = 0;
+
+    if (updates >= s->n) {
+        flipped += ising_mc_sweep(s, updates / s->n);
+        updates = updates % s->n;
+    }
+
+    if (updates > 0) {
+        index_t *perm = alloca(sizeof(index_t[s->n]));
+        get_rand_perm(s->n, perm, &s->seed);
+        for (index_t i = 0; i < updates; i++) {
+            flipped += ising_mc_update(s, perm[i]);
+        }
     }
 
     return flipped;
@@ -230,7 +278,7 @@ index_t ising_max_cluster_visit(ising_state *s, index_t v, index_t mark, index_t
  *
  * Warning: May overflow the stack during recursion.
  */
-index_t ising_max_cluster(ising_state *s, spin_t value, double edge_prob, ising_cluster_stats *max_stats)
+index_t ising_max_cluster_once(ising_state *s, spin_t value, double edge_prob, ising_cluster_stats *max_stats)
 {
     index_t *visited = memset(alloca(sizeof(index_t[s->n])), 0, sizeof(index_t[s->n]));
     ising_cluster_stats cur_stats;
@@ -265,8 +313,7 @@ index_t ising_max_cluster(ising_state *s, spin_t value, double edge_prob, ising_
 
 
 /*
- * Perform sweep 'sweeps' times and measure the cluster stats 'measure' times,
- * summing all the numbers.
+ * Measure the cluster stats 'measure' times, summing all the numbers.
  *
  * The seed is updated for all the sweeps, not for measurements (but they are performed with
  * different seeds).
@@ -274,13 +321,9 @@ index_t ising_max_cluster(ising_state *s, spin_t value, double edge_prob, ising_
  * Returns max. cluster size (resp. their sum if measure > 1) after the sweeps.
  * When max_stats != NULL, store cluster maximums (resp. their sums) there.
  */
-index_t ising_sweep_and_max_cluster(ising_state *s, uint32_t sweeps, uint32_t measure, spin_t value,
-                                    double edge_prob, ising_cluster_stats *max_stats)
+index_t ising_max_cluster_multi(ising_state *s, uint32_t measure, spin_t value,
+                          double edge_prob, ising_cluster_stats *max_stats)
 {
-
-    for (int i = 0; i < sweeps; i++)
-        ising_mc_sweep(s);
-
     index_t sum = 0;
     ising_cluster_stats temp_max_stats;
 
@@ -289,12 +332,12 @@ index_t ising_sweep_and_max_cluster(ising_state *s, uint32_t sweeps, uint32_t me
 
         if (max_stats) {
             memset(&temp_max_stats, 0, sizeof(ising_cluster_stats));
-            sum += ising_max_cluster(s, value, edge_prob, &temp_max_stats);
+            sum += ising_max_cluster_once(s, value, edge_prob, &temp_max_stats);
 #define MSUM(attr) max_stats->attr += temp_max_stats.attr
             MSUM(v_in); MSUM(e_in); MSUM(e_border); MSUM(v_out_border); MSUM(v_in_border);
 #undef MSUM
         } else {
-            sum += ising_max_cluster(s, value, edge_prob, NULL);
+            sum += ising_max_cluster_once(s, value, edge_prob, NULL);
         }
         get_rand(&s->seed); // Advance 'temporary' rand seed (restored below)
     }
@@ -336,8 +379,8 @@ int main_test()
     ising_cluster_stats stats;
 
     for (int i = 0; i < 1000; i++) {
-        index_t flips = ising_mc_sweep(&s);
-        index_t csize = ising_max_cluster(&s, -1, 1.0, &stats);
+        index_t flips = ising_mc_sweep(&s, 1);
+        index_t csize = ising_max_cluster_once(&s, -1, 1.0, &stats);
         assert(csize == stats.v_in);
         printf("Sweep: %d   flips: %d   stats: v_in=%d v_out_border=%d v_in_border=%d e_in=%d, e_border=%d\n",
                i, flips, stats.v_in, stats.v_out_border, stats.v_in_border, stats.e_in, stats.e_border);

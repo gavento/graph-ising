@@ -40,10 +40,14 @@ typedef struct {
 			 // (for random edge generation)
 } ising_state;
 
-index_t ising_mc_sweep(ising_state *s);
-index_t ising_max_cluster(ising_state *s, spin_t value, double edge_prob, ising_cluster_stats *max_stats);
-index_t ising_sweep_and_max_cluster(ising_state *s, uint32_t sweeps, uint32_t measure, spin_t value,
-                                    double edge_prob, ising_cluster_stats *max_stats);
+inline index_t ising_mc_update(ising_state *s, index_t index);
+index_t ising_mc_update_random(ising_state *s, index_t updates);
+
+index_t ising_mc_sweep(ising_state *s, index_t sweeps);
+index_t ising_mc_sweep_partial(ising_state *s, index_t updates);
+
+index_t ising_max_cluster_multi(ising_state *s, uint32_t measure, spin_t value,
+                                double edge_prob, ising_cluster_stats *max_stats);
 
 """)
 
@@ -61,9 +65,24 @@ class ClusterStats(object):
         self.e_in = ising_cluster_stats.e_in / divide
         self.e_border = ising_cluster_stats.e_border / divide
 
+
     def __repr__(self):
+
         return "<Stats: v_in=%s, v_in_border=%s, v_out_border=%s, e_in=%s, e_border=%s >" % (
                 self.v_in, self.v_in_border, self.v_out_border, self.e_in, self.e_border)
+
+
+    def __eq__(self, other):
+
+        assert isinstance(other, ClusterStats)
+        return (
+                self.v_in == other.v_in and 
+                self.v_in_border == other.v_in_border and 
+                self.v_out_border == other.v_out_border and 
+                self.e_in == other.e_in and 
+                self.e_border == other.e_border
+                )
+
 
 class IsingState(object):
 
@@ -127,13 +146,6 @@ class IsingState(object):
 
         with open(fname, 'wb') as f:
             pickle.dump(self, f)
-#            json.dump({
-#                'spins': list(self.spins),
-#                'edges': self.get_edge_list(),
-#                'seed': self.seed,
-#                'field': self.field,
-#                'T': self.T,
-#                }, f)
 
 
     @classmethod
@@ -141,10 +153,6 @@ class IsingState(object):
 
         with open(fname, 'rb') as f:
             return pickle.load(f)
-#            d = json.load(f)
-#            IS = cls(spins=d['spins'], seed=d['seed'], field=d['field'], T=d['T'])
-#            IS.set_edge_list(d['edges'])
-#            return IS
 
 
     def get_edge_list(self):
@@ -211,7 +219,7 @@ class IsingState(object):
         self.set_edge_list(G.edges())
 
             
-    def prepare_state(self):
+    def _prepare_state(self):
 
         assert self.spins.dtype == 'int8'
         assert self.neigh_list.dtype == 'int32'
@@ -232,39 +240,95 @@ class IsingState(object):
         return state
 
 
-
-    def mc_sweep_and_max_cluster(self, sweeps=1, measure=1, value=-1, edge_prob=1.0):
+    def mc_sweep(self, sweeps=1, updates=0):
         """
         Run `sweeps` full sweeps over the spins, each in random permutation order,
-        updating the random seed each time.
+        and then `update` spin updates using a part of a permutation, updating the
+        random seed every time.
 
-        Then measure maximal cluster (consisting of given spin `value`) statistics `measure` times
-        and return the averaged `ClusterStats` (zero when not measuring).
-        This part does not change the state seed, so e.g. calls `(sweeps=1, measure=0)` and 
-        `(sweeps=1, measure=100)` have the same effect on the state.
+        Returns the number of flips.
         """
 
         assert self.neigh_list is not None
 
-        state = self.prepare_state()
+        state = self._prepare_state()
+        r = cising.ising_mc_sweep_partial(state, sweeps * self.n + updates)
+        self.seed = state.seed
+
+        return r
+
+
+    def mc_random_update(self, updates=1):
+        """
+        Run `updates` of randomly chosen spins (independently, with replacement),
+        updating the random seed every time.
+
+        Returns the number of flips.
+        """
+
+        assert self.neigh_list is not None
+
+        state = self._prepare_state()
+        r = cising.ising_mc_update_random(state, updates)
+        self.seed = state.seed
+
+        return r
+
+
+
+    def mc_max_cluster(self, measures=1, value=-1, edge_prob=1.0):
+        """
+        Measure maximal cluster statistics `measure` times (only considering spins with `value`)
+        and return the averaged `ClusterStats`.
+
+        This does not change the state seed, but if measures > 1,
+        the measurements will be performed with different (temporary) seeds.
+        """
+
+        assert self.neigh_list is not None
+        measures = int(measures)
+        assert measures >= 1
+
+        state = self._prepare_state()
         sum_max_stats = ffi.new("ising_cluster_stats *")
-        r = cising.ising_sweep_and_max_cluster(state, sweeps, measure, value, edge_prob, sum_max_stats)
+        r = cising.ising_max_cluster_multi(state, measures, value, edge_prob, sum_max_stats)
         self.seed = state.seed
 
         assert r == sum_max_stats.v_in
-        return ClusterStats(sum_max_stats, divide=float(max(measure, 1)))
+        return ClusterStats(sum_max_stats, divide=float(measures))
 
 
 def test():
+
     n = 1000
-    spins = np.array([1] * n, dtype='int8')
-    #g = nx.grid_graph(dim=[30,30], periodic=True)
     g = nx.random_graphs.powerlaw_cluster_graph(n, 10, 0.1, 42)
     print(g.size(), g.order())
 
-    for i in range(1000):
-        s = IsingState(spins, g, 1.5, 8.0)
+    s = IsingState(graph=g, field=1.5, T=8.0)
 
-    print(s.mc_sweep())
-    print(s.max_cluster(-1, 1.0))
+    s1 = s.copy()
+    s1.mc_random_update(10000)
+    r1 = s1.mc_max_cluster(measures=3, edge_prob=0.9)
+
+    s2 = s.copy()
+    s2.mc_random_update(10000)
+    r2 = s2.mc_max_cluster(measures=3, edge_prob=0.9)
+
+    assert s1 == s2
+    assert s1 != s
+    assert r1 == r2
+
+    s3 = s.copy()
+    s3.mc_sweep(50)
+    s3.mc_sweep(50)
+    r3 = s3.mc_max_cluster(measures=1, edge_prob=1.0)
+    
+    s4 = s.copy()
+    s4.mc_sweep(100)
+    r4 = s4.mc_max_cluster(measures=1, edge_prob=1.0)
+
+    assert s3 == s4
+    assert s3 != s
+    assert r3 == r4
+
 

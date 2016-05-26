@@ -6,7 +6,8 @@ import time
 
 
 def do_job(state, sweeps):
-    return state.mc_sweep_and_max_cluster(sweeps)
+    state.mc_sweep(sweeps)
+    return state.mc_max_cluster()
 
 
 def test():
@@ -17,7 +18,7 @@ def test():
     print(s.neigh_list)
     print(s.neigh_offset)
     print(s.degree)
-    stat = s.max_cluster()
+    stat = s.mc_max_cluster()
     assert stat.v_in == 3
     assert stat.v_in_border == 2
     assert stat.v_out_border == 2
@@ -47,7 +48,7 @@ def test():
     # One thread
     if False:
         for i in range(iters):
-            m = np.mean([do_job(state, sweeps) for state in pop])
+            m = np.mean([do_job(state, sweeps).v_in for state in pop])
 
     # Multithreaded
     if True:
@@ -57,11 +58,8 @@ def test():
                 m = np.mean([j.result().v_in for j in jobs])
 
     state = pop[0]
-    state.mc_sweep_and_max_cluster(sweeps=1000)
-    print(state.mc_sweep_and_max_cluster(sweeps=0, measurements=1))
-    print(state.mc_sweep_and_max_cluster(sweeps=0, measurements=1, edge_prob=0.8))
-    print(state.mc_sweep_and_max_cluster(sweeps=0, measurements=100, edge_prob=0.8))
-    print(state.max_cluster(edge_prob=1.0))
+    state.mc_sweep(sweeps=1000)
+    print(state.mc_max_cluster(edge_prob=1.0))
 
 
     print("  Time: %f" % (time.time() - t0))
