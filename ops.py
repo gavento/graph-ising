@@ -84,10 +84,7 @@ class GraphSet:
         "Returns a resulting spins_out tensor operation"
         with tf.name_scope(self.scope):
             assert spins_in.shape == (self.n, self.max_order)
-            if self.sparse:
-                raise NotImplementedError
-            else:
-                sum_neighbors = tf.linalg.matvec(self.adj_m, spins_in)
+            sum_neighbors = self.sum_neighbors_op(spins_in)
             # delta energy if flipped
             delta_E = (self.v_fields - sum_neighbors) * (1 + 2 * spins_in) # TODO: Likely wrong second half
             # probability of random flip
@@ -126,19 +123,20 @@ class GraphSet:
     def mean_neighbors_op(self, node_data, edge_mask=None):
         return self._neighbors_op(tf.math.segment_mean, node_data, edge_mask=edge_mask)
 
+    def sum_neighbors_op_2(self, node_data):
+        "Return the maxima of node_data of adjacent nodes (not including self)."
+        assert node_data.shape == (self.n, self.max_order)
+        node_data_f = tf.reshape(node_data, (self.n * self.max_order,))
+        edge_data = tf.gather(node_data_f, self.v_edge_starts_global)
+        node_out = tf.math.segment_sum(edge_data, self.v_edge_ends_global)
+        return tf.reshape(tf.pad(node_out, [[0, self.max_order - self.orders[self.n - 1]]]), (self.n, self.max_order))
 
 @contextlib.contextmanager
 def timed(name=None):
     t0 = time.time()
     yield
     t1 = time.time()
-    print((name + " " if name else "") + "took {:.3f} s".format(t1 - t0))
-
-@tf.function
-def repeated(s):
-    for i in range(10):
-        s = gs.update_op(s, 1.0, True)
-    return s
+    print((name + " " if name else "") + "took {:.3f} ms".format((t1 - t0) * 1000.0))
 
 def test_ops():
     graphs = [nx.path_graph(3), nx.path_graph(4), nx.path_graph(2)]
@@ -149,4 +147,25 @@ def test_ops():
     assert (gs.sum_neighbors_op(data).numpy() == [[1, 5, 1, 0], [4, 3, 3, 2], [1, 3, 0, 0]]).all()
     assert (gs.mean_neighbors_op(data.astype(float)).numpy() == [[1, 2.5, 1, 0], [4, 1.5, 1.5, 2], [1, 3, 0, 0]]).all()
 
+def test_update():
+    graphs = [nx.path_graph(1000)] * 100
+    with timed('init graph set'):
+        gs = GraphSet(graphs)
+        gs.construct()
+
+    @tf.function
+    def repeated(s):
+        for i in range(10):
+            s = gs.update_op(s, 0.5, True)
+        return s
+
+    with timed('repeated #1'):
+        s = repeated(gs.v_spins)
+    with timed('repeated #2'):
+        s = repeated(gs.v_spins)
+    with timed('repeated #3'):
+        s = repeated(gs.v_spins)
+
+
 test_ops()
+test_update()
