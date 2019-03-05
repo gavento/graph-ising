@@ -1,70 +1,82 @@
-import tensorflow as tf
-import numpy as np
+import contextlib
+import time
+
 import networkx as nx
+import numpy as np
+import tensorflow as tf
 
 
 class GraphSet:
-    def __init__(self, graphs, spins=-1.0, fields=0.0, temperatures=1.0, sparse=False, dtype=np.float32, scope='ising'):
-        self.scope = scope
-        if isinstance(graphs, nx.Graph):
-            graphs = [graphs]
-        self.graphs = list(graphs)
-        # Original node IDs in the selected order (may be customized e.g. for caching)
-        self.node_lists = [list(g.nodes()) for g in self.graphs]
-        self.node_indexes = [{v: i for i, v in enumerate(nl)} for nl in self.node_lists]
+    def __init__(self, graphs, spins=-1.0, fields=0.0, temperatures=1.0, dtype=np.float32, scope='ising'):
 
+        # Graphs and their properties
+        self.graphs = list(graphs)
         self.n = len(self.graphs)
-        self.orders = [len(nl) for nl in self.node_lists]
+        self.orders = [g.order() for g in self.graphs]
+        self.sizes = [g.size() for g in self.graphs]
         self.max_order = max(self.orders)
+        self.max_size = max(self.sizes)
+        self.tot_order = sum(self.orders)
+        self.tot_size = sum(self.sizes)
+
+        # Lists of original node IDs (fixing node order) and their indices
+        self.nodes = [list(g.nodes()) for g in self.graphs]
+        self.node_indexes = [{v: i for i, v in enumerate(nl)} for nl in self.nodes]
+
+        # Misc parameters
+        self.scope = scope
         self.dtype = dtype
 
-        def vertices_array(data):
-            if isinstance(data, (int, float)):
-                a = np.full((self.n, self.max_order), data, dtype=self.dtype)
-            else:
-                a = np.array(data, dtype=dtype)
-            assert a.shape == (self.n, self.max_order)
-            return a
+        # Node attributes
+        self.spins = self._nodes_array(spins)
+        self.fields = self._nodes_array(fields)
+        self.temperatures = self._nodes_array(temperatures)
+        self.degrees = np.zeros((self.n, self.max_order), dtype=np.int32)
+        self.node_mask = np.zeros((self.n, self.max_order), dtype=np.int32)
 
-        self.spins = vertices_array(spins)
-        self.fields = vertices_array(fields)
-        self.temperatures = vertices_array(temperatures)
-        self.degrees = np.full((self.n, self.max_order), 0, dtype=np.int32)
-        self.node_mask = np.full((self.n, self.max_order), 0, dtype=np.int32)
-
+        #self.edge_starts = np.full((self.n, self.max_size), 0, dtype=np.int32)
+        #self.edge_ends = np.full((self.n, self.max_order), 0, dtype=np.int32)
+        # Edge starts and ends, indexes into flattened vertex list (of length n*max_order)
+        # Ends are sorted, 
+        self.edge_starts_global = np.zeros(self.tot_size * 2, dtype=np.int32)
+        self.edge_ends_global = np.zeros(self.tot_size * 2, dtype=np.int32)
+        ei = 0
         for gi, g in enumerate(self.graphs):
-            for vi, v in enumerate(g.nodes()):
+            for vi, v in enumerate(self.nodes[gi]):
                 self.degrees[gi, vi] = g.degree[v]
                 self.node_mask[gi, vi] = 1
+                for w in g.neighbors(v):
+                    wi = self.node_indexes[gi][w]
+                    self.edge_starts_global[ei] = wi + gi * self.max_order
+                    self.edge_ends_global[ei] = vi + gi * self.max_order
+                    ei += 1
             self.spins[gi, g.order():] = 0.0
+        assert ei == self.tot_size * 2
 
-        self.sparse = bool(sparse)
-        if self.sparse:
-            raise NotImplementedError
+    def _nodes_array(self, data):
+        "Helper to create / convert node data array"
+        if isinstance(data, (int, float)):
+            a = np.full((self.n, self.max_order), data, dtype=self.dtype)
         else:
-            self.adj_m = np.zeros((self.n, self.max_order, self.max_order), dtype=dtype)
-            for gi, g in enumerate(self.graphs):
-                for vi, v in enumerate(self.node_lists[gi]):
-                    for w in g.neighbors(v):
-                        wi = self.node_indexes[gi][w]
-                        self.adj_m[gi, vi, wi] = 1
-                        # Likely not needed due to symmetry
-                        self.adj_m[gi, wi, vi] = 1
+            a = np.array(data, dtype=self.dtype)
+        assert a.shape == (self.n, self.max_order)
+        return a
 
     def construct(self):
-        "All the variables need to be initialized."
+        "All the variables still need to be initialized."
         with tf.name_scope(self.scope):
+            self.v_orders = tf.Variable(self.orders, trainable=False, name='orders', dtype=tf.int32)
+            self.v_sizes = tf.Variable(self.sizes, trainable=False, name='sizes', dtype=tf.int32)
+
             self.v_fields = tf.Variable(self.fields, trainable=False, name='fields', dtype=self.dtype)
             self.v_temperatures = tf.Variable(self.temperatures, trainable=False, name='temperatures', dtype=self.dtype)
             self.v_spins = tf.Variable(self.spins, trainable=False, name='spins', dtype=self.dtype)
             self.v_degrees = tf.Variable(self.degrees, trainable=False, name='degrees', dtype=tf.int32)
             self.v_node_mask = tf.Variable(self.node_mask, trainable=False, name='node_mask', dtype=tf.int32)
-            self.v_node_mask_bool = tf.Variable(self.node_mask, trainable=False, name='node_mask', dtype=tf.bool)
-            self.v_orders = tf.Variable(self.orders, trainable=False, name='orders', dtype=tf.int32)
-            if self.sparse:
-                raise NotImplementedError
-            else:
-                self.v_adj_m = tf.Variable(self.adj_m, trainable=False, name='adj_m', dtype=self.dtype)
+            self.v_node_mask_bool = tf.Variable(self.node_mask, trainable=False, name='node_mask_bool', dtype=tf.bool)
+            self.v_edge_starts_global = tf.Variable(self.edge_starts_global, trainable=False, name='edge_starts_global', dtype=tf.int32)
+            self.v_edge_ends_global = tf.Variable(self.edge_ends_global, trainable=False, name='edge_ends_global', dtype=tf.int32)
+
             self.metric_fraction_flipped = tf.keras.metrics.Mean('fraction_flipped')
             self.metric_mean_spin = tf.keras.metrics.Mean('mean_spin')
 
@@ -94,19 +106,26 @@ class GraphSet:
                     spins_out = tf.identity(spins_out)
             return spins_out
 
-    def neighbors_max_op(self, node_data, edge_mask=None):
-        "Return the maxima of node_data of adjacent nodes"
+    def _neighbors_op(self, segment_fn, node_data, edge_mask=None):
+        "Return the maxima of node_data of adjacent nodes (not including self)."
         assert node_data.shape == (self.n, self.max_order)
-        edge_data = tf.gather(node_data, self.v_edge_starts, axis=1)
+        node_data_f = tf.reshape(node_data, (self.n * self.max_order,))
+        edge_data = tf.gather(node_data_f, self.v_edge_starts_global)
         if edge_mask is not None:
-            assert edge_mask.shape == (self.n, self.max_edges)
+            assert edge_mask.shape == (self.tot_size * s,)
             edge_data = tf.cast(edge_mask, node_data.dtype) * edge_data
-        edge_data_reshaped = tf.reshape(edge_data, (self.n * self.max_order, self.max_edges))
-        node_out = tf.math.segment_max(edge_data_reshaped, self.v_edge_ends_global)
+        node_out = segment_fn(edge_data, self.v_edge_ends_global)
         return tf.reshape(tf.pad(node_out, [[0, self.max_order - self.orders[self.n - 1]]]), (self.n, self.max_order))
 
-import time
-import contextlib
+    def sum_neighbors_op(self, node_data, edge_mask=None):
+        return self._neighbors_op(tf.math.segment_sum, node_data, edge_mask=edge_mask)
+
+    def max_neighbors_op(self, node_data, edge_mask=None):
+        return self._neighbors_op(tf.math.segment_max, node_data, edge_mask=edge_mask)
+
+    def mean_neighbors_op(self, node_data, edge_mask=None):
+        return self._neighbors_op(tf.math.segment_mean, node_data, edge_mask=edge_mask)
+
 
 @contextlib.contextmanager
 def timed(name=None):
@@ -121,26 +140,13 @@ def repeated(s):
         s = gs.update_op(s, 1.0, True)
     return s
 
-g = nx.complete_graph(100)
-gs = GraphSet([g] * 1000)
-gs.construct()
+def test_ops():
+    graphs = [nx.path_graph(3), nx.path_graph(4), nx.path_graph(2)]
+    gs = GraphSet(graphs)
+    gs.construct()
+    data = np.array([[2, 1, 3, 9], [1, 4, 2, -1], [3, 1, 9, 9]])
+    assert (gs.max_neighbors_op(data).numpy() == [[1, 3, 1, 0], [4, 2, 4, 2], [1, 3, 0, 0]]).all()
+    assert (gs.sum_neighbors_op(data).numpy() == [[1, 5, 1, 0], [4, 3, 3, 2], [1, 3, 0, 0]]).all()
+    assert (gs.mean_neighbors_op(data.astype(float)).numpy() == [[1, 2.5, 1, 0], [4, 1.5, 1.5, 2], [1, 3, 0, 0]]).all()
 
-s2 = gs.spins
-with timed("iters"):
-    for i in range(10):
-        s2 = gs.update_op(s2)
-
-with timed("wrapped 1. call"):
-    s2 = repeated(gs.spins)
-with timed("wrapped 2. call"):
-    s2 = repeated(gs.spins)
-
-with timed("create GS"):
-    gs2 = GraphSet([g] * 1000)
-with timed("construct GS"):
-    gs2.construct()
-
-with timed("other wrapped 1. call"):
-    s2 = repeated(gs.spins)
-with timed("other wrapped 2. call"):
-    s2 = repeated(gs.spins)
+test_ops()
