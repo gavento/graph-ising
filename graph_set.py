@@ -73,10 +73,11 @@ class GraphIsing:
         glob_ends = np.zeros(self.n * self.max_size * 2, dtype=np.int32)
         ei = 0
         for gi, g in enumerate(graphs):
-            assert len(g.edge_starts) == len(g.edge_ends)
-            glob_starts[ei:ei + len(g.edge_starts)] = g.edge_starts + (gi * self.max_order)
-            glob_ends[ei:ei + len(g.edge_ends)] = g.edge_ends + (gi * self.max_order)
-            ei += len(g.edge_ends)
+            k = g.size * 2
+            glob_starts[ei:ei + k] = g.edge_starts[:k] + (gi * self.max_order)
+            glob_ends[ei:ei + k] = g.edge_ends[:k] + (gi * self.max_order)
+            ei += k
+        assert ei == self.v_tot_size.numpy() * 2
         self.v_edge_starts_global.assign(glob_starts)
         self.v_edge_ends_global.assign(glob_ends)
 
@@ -117,17 +118,17 @@ class GraphIsing:
         max_comp_sizes = tf.reduce_max(comp_sizes, axis=1)
         return max_comp_sizes
 
-
     def _neighbors_op(self, segment_fn, node_data, edge_mask=None):
         "Return the maxima of node_data of adjacent nodes (not including self)."
         assert node_data.shape == (self.n, self.max_order)
         node_data_f = tf.reshape(node_data, (self.n * self.max_order,))
-        edge_data = tf.gather(node_data_f, self.v_edge_starts_global)
+        k = self.v_tot_size * 2
+        edge_data = tf.gather(node_data_f, self.v_edge_starts_global[:k])
         if edge_mask is not None:
-            assert edge_mask.shape == (self.tot_size * s,)
             edge_data = tf.cast(edge_mask, node_data.dtype) * edge_data
-        node_out = segment_fn(edge_data, self.v_edge_ends_global)
-        return tf.reshape(tf.pad(node_out, [[0, self.max_order - self.orders[self.n - 1]]]), (self.n, self.max_order))
+        node_out = segment_fn(edge_data, self.v_edge_ends_global[:k])
+        pad_out = self.n * self.max_order - tf.shape(node_out)[0]
+        return tf.reshape(tf.pad(node_out, [[0, pad_out]]), (self.n, self.max_order))
 
     def sum_neighbors_op(self, node_data, edge_mask=None):
         return self._neighbors_op(tf.math.segment_sum, node_data, edge_mask=edge_mask)
@@ -137,12 +138,4 @@ class GraphIsing:
 
     def mean_neighbors_op(self, node_data, edge_mask=None):
         return self._neighbors_op(tf.math.segment_mean, node_data, edge_mask=edge_mask)
-
-    def sum_neighbors_op_2(self, node_data):
-        "Return the maxima of node_data of adjacent nodes (not including self). (optimized fn?)"
-        assert node_data.shape == (self.n, self.max_order)
-        node_data_f = tf.reshape(node_data, (self.n * self.max_order,))
-        edge_data = tf.gather(node_data_f, self.v_edge_starts_global)
-        node_out = tf.math.segment_sum(edge_data, self.v_edge_ends_global)
-        return tf.reshape(tf.pad(node_out, [[0, self.max_order - self.orders[self.n - 1]]]), (self.n, self.max_order))
 

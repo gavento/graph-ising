@@ -11,26 +11,61 @@ tf.autograph.set_verbosity(0, alsologtostdout=True)
 
 
 def test_create():
-    g = nx.path_graph(1000)
+    N = 1000
+    K = 1000
+    g = nx.random_graphs.powerlaw_cluster_graph(N, 3, 0.5)
     with timed('TFGraph'):
-        tfg = TFGraph(g, 1200, 2000)
+        tfg = TFGraph(g, N, N * 4)
     with timed('GraphIsing'):
-        gis = GraphIsing(1000, 1200, 2000)
+        gis = GraphIsing(K, N, N * 4)
     with timed('set_graphs'):
-        gis.set_graphs([tfg] * 1000)
+        gis.set_graphs([tfg] * K)
+    with timed('GraphIsing (with graphs)'):
+        gis2 = GraphIsing([tfg] * K, N, N * 4)
+
 
 def test_ops():
-    graphs = [nx.path_graph(3), nx.path_graph(4), nx.path_graph(2)]
-    gs = GraphSet(graphs)
-    gs.construct()
-    data = np.array([[2, 1, 3, 9], [1, 4, 2, -1], [3, 1, 9, 9]])
-    assert (gs.max_neighbors_op(data).numpy() == [[1, 3, 1, 0], [4, 2, 4, 2], [1, 3, 0, 0]]).all()
-    assert (gs.sum_neighbors_op(data).numpy() == [[1, 5, 1, 0], [4, 3, 3, 2], [1, 3, 0, 0]]).all()
-    assert (gs.mean_neighbors_op(data.astype(float)).numpy() == [[1, 2.5, 1, 0], [4, 1.5, 1.5, 2], [1, 3, 0, 0]]).all()
+    graphs = [nx.path_graph(3), nx.path_graph(4), nx.path_graph(2), nx.Graph()]
+    tfgs = [TFGraph(g, 4, 10) for g in graphs]
+    gis = GraphIsing(tfgs, 4, 10)
+    data = tf.constant([[2, 1, 3, 9], [1, 4, 2, -1], [3, 1, 9, 9], [6, 5, 0, -1]], dtype=tf.int32)
+    assert (gis.max_neighbors_op(data).numpy() == [[1, 3, 1, 0], [4, 2, 4, 2], [1, 3, 0, 0], [0, 0, 0, 0]]).all()
+    assert (gis.sum_neighbors_op(data).numpy() == [[1, 5, 1, 0], [4, 3, 3, 2], [1, 3, 0, 0], [0, 0, 0, 0]]).all()
+    assert (gis.mean_neighbors_op(tf.cast(data, tf.float32)).numpy() == [[1, 2.5, 1, 0], [4, 1.5, 1.5, 2], [1, 3, 0, 0], [0, 0, 0, 0]]).all()
+    edge_mask = tf.constant([1, 1, 0, 0] + [1] * 8)
+    assert (gis.max_neighbors_op(data, edge_mask=edge_mask).numpy()[0] == [1, 2, 0, 0]).all()
+    assert (gis.sum_neighbors_op(data, edge_mask=edge_mask).numpy()[0] == [1, 2, 0, 0]).all()
 
+
+def test_update():
+    graphs = [nx.path_graph(100)] * 100
+    with timed('init graph set'):
+        gs = GraphSet(graphs)
+        gs.construct()
+
+    @tf.function
+    def single(s):
+        return gs.update_op(s, 0.5, False)
+
+    with timed('single #1'):
+        s = single(gs.v_spins)
+    with timed('single #2'):
+        s = single(gs.v_spins)
+
+    print(tf.autograph.to_code(gs.update_op, experimental_optional_features=None))
+
+    @tf.function
+    def repeated(s):
+        for i in range(10):
+            s = gs.update_op(s, 0.5, True)
+        return s
+
+    with timed('repeated #1'):
+        s = repeated(gs.v_spins)
+    with timed('repeated #2'):
+        s = repeated(gs.v_spins)
 
 def test_comps():
-
     @tf.function
     def comps(gset, iters):
         return gset.components_op(iters)
@@ -66,32 +101,3 @@ def test_comps():
     for f in [comps, gs.components_op, gs.components_op, GraphSet.components_op]:
         with timed('sigs'):
             print([(l, l.structured_input_signature) for l in f._list_all_concrete_functions_for_serialization()])
-
-
-def test_update():
-    graphs = [nx.path_graph(100)] * 100
-    with timed('init graph set'):
-        gs = GraphSet(graphs)
-        gs.construct()
-
-    @tf.function
-    def single(s):
-        return gs.update_op(s, 0.5, False)
-
-    with timed('single #1'):
-        s = single(gs.v_spins)
-    with timed('single #2'):
-        s = single(gs.v_spins)
-
-    print(tf.autograph.to_code(gs.update_op, experimental_optional_features=None))
-
-    @tf.function
-    def repeated(s):
-        for i in range(10):
-            s = gs.update_op(s, 0.5, True)
-        return s
-
-    with timed('repeated #1'):
-        s = repeated(gs.v_spins)
-    with timed('repeated #2'):
-        s = repeated(gs.v_spins)
