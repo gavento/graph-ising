@@ -42,14 +42,15 @@ class GraphIsing:
             # Edge starts numbered globally (by flattened node indices)
             self.v_edge_starts_global = vf(self.n * self.max_size * 2, 0, 'edge_starts_global', np.int32)
             self.v_edge_ends_global = vf(self.n * self.max_size * 2, 0, 'edge_starts_global', np.int32)
-            # Update metrics are WIP
-            #self.metric_fraction_flipped = tf.keras.metrics.Mean('fraction_flipped')
-            #self.metric_mean_spin = tf.keras.metrics.Mean('mean_spin')
+            # Update op metrics
+            self.metric_fraction_flipped = tf.keras.metrics.Mean('fraction_flipped')
+            self.metric_mean_spin = tf.keras.metrics.Mean('mean_spin')
 
         if not isinstance(graphs_or_n, int):
             self.set_graphs(graphs_or_n)
 
     def set_graphs(self, graphs):
+        "Use given TFGraphs reusing the same variables and computation graph"
         graphs = list(graphs)
         assert all(isinstance(g, TFGraph) for g in graphs)
         assert all(g.max_order == self.max_order for g in graphs)
@@ -81,42 +82,9 @@ class GraphIsing:
         self.v_edge_starts_global.assign(glob_starts)
         self.v_edge_ends_global.assign(glob_ends)
 
-    def update_op(self, spins_in, update_fraction=1.0, update_metrics=True):
-        "Returns a resulting spins_out tensor operation"
-        with tf.name_scope(self.scope):
-            assert spins_in.shape == (self.n, self.max_order)
-            sum_neighbors = self.sum_neighbors_op(spins_in)
-            # delta energy if flipped
-            delta_E = (self.v_fields - sum_neighbors) * (1 + 2 * spins_in) # TODO: Likely wrong second half
-            # probability of random flip
-            random_flip = tf.random.uniform((self.n, self.max_order), name='flip_p') < tf.math.exp(delta_E / self.v_temperatures)
-            # updating only a random subset
-            update = (tf.random.uniform((self.n, self.max_order), name='update_p') < update_fraction)
-            # combined condition
-            flip = ((delta_E > 0.0) | (random_flip)) & update
-            # update spins
-            spins_out = tf.where(flip, -spins_in, spins_in)
-            # metrics
-            if update_metrics:
-                op1 = self.metric_fraction_flipped.update_state(tf.cast(flip, self.dtype), update & self.v_node_mask_bool)
-                op2 = self.metric_mean_spin.update_state(spins_out, self.v_node_mask)
-                with tf.control_dependencies([op1, op2]):
-                    spins_out = tf.identity(spins_out)
-            return spins_out
-
-    @tf.function
-    def largest_components(self, iters=16, for_spin=1.0):
-        K = self.n * self.max_order
-        comp_nums = tf.reshape(tf.range(K, dtype=tf.int32), (self.n, self.max_order))
-        edge_mask = None
-        for i in range(iters):
-            neigh_nums = self.max_neighbors_op(comp_nums, edge_mask=edge_mask)
-            comp_nums = tf.maximum(comp_nums, neigh_nums)
-        comp_nums = tf.reshape(comp_nums, [K])
-        comp_sizes = tf.math.unsorted_segment_sum(tf.fill([K], 1), comp_nums, K)
-        comp_sizes = tf.reshape(comp_sizes, [self.n, self.max_order])
-        max_comp_sizes = tf.reduce_max(comp_sizes, axis=1)
-        return max_comp_sizes
+    def initial_spins(self, value=-1.0):
+        "Returns initial spin values as `tf.constant`."
+        return tf.constant(np.stack([g.initial_spins(value) for g in self.graphs]), dtype=self.dtype)
 
     def _neighbors_op(self, segment_fn, node_data, edge_mask=None):
         "Return the maxima of node_data of adjacent nodes (not including self)."
@@ -139,3 +107,37 @@ class GraphIsing:
     def mean_neighbors_op(self, node_data, edge_mask=None):
         return self._neighbors_op(tf.math.segment_mean, node_data, edge_mask=edge_mask)
 
+    def update_op(self, spins_in, update_fraction=1.0, update_metrics=True):
+        "Returns a resulting spins_out tensor operation"
+        with tf.name_scope(self.scope):
+            assert spins_in.shape == (self.n, self.max_order)
+            sum_neighbors = self.sum_neighbors_op(spins_in)
+            # delta energy if flipped
+            delta_E = (self.v_fields - sum_neighbors) * (1 + 2 * spins_in) # TODO: Likely wrong second half
+            # probability of random flip
+            random_flip = tf.random.uniform((self.n, self.max_order), name='flip_p') < tf.math.exp(delta_E / self.v_temperatures)
+            # updating only a random subset
+            update = (tf.random.uniform((self.n, self.max_order), name='update_p') < update_fraction)
+            # combined condition
+            flip = ((delta_E > 0.0) | (random_flip)) & update
+            # update spins
+            spins_out = tf.where(flip, -spins_in, spins_in)
+            # metrics
+            if update_metrics:
+                self.metric_fraction_flipped.update_state(tf.cast(flip, self.dtype), update & self.v_node_masks)
+                self.metric_mean_spin.update_state(spins_out, self.v_node_masks)
+            return spins_out
+
+    @tf.function
+    def largest_components(self, iters=16, for_spin=1.0):
+        K = self.n * self.max_order
+        comp_nums = tf.reshape(tf.range(K, dtype=tf.int32), (self.n, self.max_order))
+        edge_mask = None
+        for i in range(iters):
+            neigh_nums = self.max_neighbors_op(comp_nums, edge_mask=edge_mask)
+            comp_nums = tf.maximum(comp_nums, neigh_nums)
+        comp_nums = tf.reshape(comp_nums, [K])
+        comp_sizes = tf.math.unsorted_segment_sum(tf.fill([K], 1), comp_nums, K)
+        comp_sizes = tf.reshape(comp_sizes, [self.n, self.max_order])
+        max_comp_sizes = tf.reduce_max(comp_sizes, axis=1)
+        return max_comp_sizes

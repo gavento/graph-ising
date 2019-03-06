@@ -37,33 +37,36 @@ def test_ops():
     assert (gis.sum_neighbors_op(data, edge_mask=edge_mask).numpy()[0] == [1, 2, 0, 0]).all()
 
 
-def test_update():
-    graphs = [nx.path_graph(100)] * 100
-    with timed('init graph set'):
-        gs = GraphSet(graphs)
-        gs.construct()
+def test_update_and_caching():
+    N = 1000
+    K = 100
+    g = nx.random_graphs.powerlaw_cluster_graph(N, 3, 0.5)
+    with timed('TFGraph and GraphIsing'):
+        tfg = TFGraph(g, N, N * 4)
+        gis = GraphIsing([tfg] * K, N, N * 4)
+        s0 = gis.initial_spins(-1.0)
 
     @tf.function
-    def single(s):
-        return gs.update_op(s, 0.5, False)
+    def repeat(iters, data):
+        for i in range(iters):
+            data = gis.update_op(data, 0.5)
+        return data
 
     with timed('single #1'):
-        s = single(gs.v_spins)
+        s = repeat(1, s0)
     with timed('single #2'):
-        s = single(gs.v_spins)
-
-    print(tf.autograph.to_code(gs.update_op, experimental_optional_features=None))
-
-    @tf.function
-    def repeated(s):
-        for i in range(10):
-            s = gs.update_op(s, 0.5, True)
-        return s
-
+        s = repeat(1, s0)
     with timed('repeated #1'):
-        s = repeated(gs.v_spins)
+        s = repeat(3, s0)
     with timed('repeated #2'):
-        s = repeated(gs.v_spins)
+        s = repeat(3, s0)
+    #print([cf.structured_input_signature for cf in repeat._list_all_concrete_functions_for_serialization()])
+    assert len(repeat._list_all_concrete_functions_for_serialization()) == 2
+
+    gis.set_graphs([tfg] * K)
+    with timed('single #3'):
+        s = repeat(1, s0)
+    assert len(repeat._list_all_concrete_functions_for_serialization()) == 2
 
 def test_comps():
     @tf.function
