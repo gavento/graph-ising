@@ -2,82 +2,86 @@ import networkx as nx
 import numpy as np
 import tensorflow as tf
 
+from tfgraph import TFGraph
+from utils import timed
 
-class GraphSet:
-    def __init__(self, graphs, spins=-1.0, fields=0.0, temperatures=1.0, dtype=np.float32, scope='ising'):
 
-        # Graphs and their properties
-        self.graphs = list(graphs)
-        self.n = len(self.graphs)
-        self.orders = [g.order() for g in self.graphs]
-        self.sizes = [g.size() for g in self.graphs]
-        self.max_order = max(self.orders)
-        self.max_size = max(self.sizes)
-        self.tot_order = sum(self.orders)
-        self.tot_size = sum(self.sizes)
-
-        # Lists of original node IDs (fixing node order) and their indices
-        self.nodes = [list(g.nodes()) for g in self.graphs]
-        self.node_indexes = [{v: i for i, v in enumerate(nl)} for nl in self.nodes]
-
-        # Misc parameters
-        self.scope = scope
-        self.dtype = dtype
-
-        # Node attributes
-        self.spins = self._nodes_array(spins)
-        self.fields = self._nodes_array(fields)
-        self.temperatures = self._nodes_array(temperatures)
-        self.degrees = np.zeros((self.n, self.max_order), dtype=np.int32)
-        self.node_mask = np.zeros((self.n, self.max_order), dtype=np.int32)
-
-        #self.edge_starts = np.full((self.n, self.max_size), 0, dtype=np.int32)
-        #self.edge_ends = np.full((self.n, self.max_order), 0, dtype=np.int32)
-        # Edge starts and ends, indexes into flattened vertex list (of length n*max_order)
-        # Ends are sorted, 
-        self.edge_starts_global = np.zeros(self.tot_size * 2, dtype=np.int32)
-        self.edge_ends_global = np.zeros(self.tot_size * 2, dtype=np.int32)
-        ei = 0
-        for gi, g in enumerate(self.graphs):
-            for vi, v in enumerate(self.nodes[gi]):
-                self.degrees[gi, vi] = g.degree[v]
-                self.node_mask[gi, vi] = 1
-                for w in g.neighbors(v):
-                    wi = self.node_indexes[gi][w]
-                    self.edge_starts_global[ei] = wi + gi * self.max_order
-                    self.edge_ends_global[ei] = vi + gi * self.max_order
-                    ei += 1
-            self.spins[gi, g.order():] = 0.0
-        assert ei == self.tot_size * 2
-
-    def _nodes_array(self, data):
-        "Helper to create / convert node data array"
-        if isinstance(data, (int, float)):
-            a = np.full((self.n, self.max_order), data, dtype=self.dtype)
+class GraphIsing:
+    def __init__(self, graphs_or_n, max_order, max_size, scope='ising'):
+        if isinstance(graphs_or_n, int):
+            self.n = graphs_or_n
         else:
-            a = np.array(data, dtype=self.dtype)
-        assert a.shape == (self.n, self.max_order)
-        return a
+            assert isinstance(graphs_or_n, list)
+            assert (isinstance(g, TFGraph) for g in graphs_or_n).all()
+            self.n = len(graphs_or_n)
 
-    def construct(self):
-        "All the variables still need to be initialized."
+        self.max_order = max_order
+        self.max_size = max_size
+        self.scope = scope
+        self.dtype = np.float32
+
+        # Never use these in the computations - use only consts above and variables below
+        self.empty_graph = TFGraph(None, max_order, max_size)
+        self.graphs = [self.empty_graph] * self.n
+
+        def vf(shape, val, name, t=self.dtype):
+            "Helper creating a const variable of given shape"
+            return tf.Variable(np.full(shape, val, dtype=t), trainable=False, name=name, dtype=t)
+
         with tf.name_scope(self.scope):
-            self.v_orders = tf.Variable(self.orders, trainable=False, name='orders', dtype=tf.int32)
-            self.v_sizes = tf.Variable(self.sizes, trainable=False, name='sizes', dtype=tf.int32)
+            self.v_orders = vf([self.n], 0, 'orders', np.int32)
+            self.v_sizes = vf([self.n], 0, 'sizes', np.int32)
+            self.v_tot_order = vf([], 0, 'tot_order', np.int32)
+            self.v_tot_size = vf([], 0, 'tot_size', np.int32)
+            self.v_fields = vf([self.n, self.max_order], 0.0, 'fields')
+            self.v_temperatures = vf([self.n, self.max_order], 0.0, 'temperatures')
+            self.v_degrees = vf([self.n, self.max_order], 0, 'degrees', np.int32)
+            self.v_node_masks = vf([self.n, self.max_order], False, 'node_mask', bool)
+            # Edge starts numbered within every graph independently
+            self.v_edge_starts = vf([self.n, self.max_size * 2], 0, 'edge_starts', np.int32)
+            self.v_edge_ends = vf([self.n, self.max_size * 2], 0, 'edge_starts', np.int32)
+            # Edge starts numbered globally (by flattened node indices)
+            self.v_edge_starts_global = vf(self.n * self.max_size * 2, 0, 'edge_starts_global', np.int32)
+            self.v_edge_ends_global = vf(self.n * self.max_size * 2, 0, 'edge_starts_global', np.int32)
+            # Update metrics are WIP
+            #self.metric_fraction_flipped = tf.keras.metrics.Mean('fraction_flipped')
+            #self.metric_mean_spin = tf.keras.metrics.Mean('mean_spin')
 
-            self.v_fields = tf.Variable(self.fields, trainable=False, name='fields', dtype=self.dtype)
-            self.v_temperatures = tf.Variable(self.temperatures, trainable=False, name='temperatures', dtype=self.dtype)
-            self.v_spins = tf.Variable(self.spins, trainable=False, name='spins', dtype=self.dtype)
-            self.v_degrees = tf.Variable(self.degrees, trainable=False, name='degrees', dtype=tf.int32)
-            self.v_node_mask = tf.Variable(self.node_mask, trainable=False, name='node_mask', dtype=tf.int32)
-            self.v_node_mask_bool = tf.Variable(self.node_mask, trainable=False, name='node_mask_bool', dtype=tf.bool)
-            self.v_edge_starts_global = tf.Variable(self.edge_starts_global, trainable=False, name='edge_starts_global', dtype=tf.int32)
-            self.v_edge_ends_global = tf.Variable(self.edge_ends_global, trainable=False, name='edge_ends_global', dtype=tf.int32)
+        if not isinstance(graphs_or_n, int):
+            self.set_graphs(graphs_or_n)
 
-            self.metric_fraction_flipped = tf.keras.metrics.Mean('fraction_flipped')
-            self.metric_mean_spin = tf.keras.metrics.Mean('mean_spin')
+    def set_graphs(self, graphs):
+        graphs = list(graphs)
+        assert all(isinstance(g, TFGraph) for g in graphs)
+        assert all(g.max_order == self.max_order for g in graphs)
+        assert all(g.max_size == self.max_size for g in graphs)
+        assert len(graphs) <= self.n
+        graphs.extend([self.empty_graph] * (self.n - len(graphs)))
+        self.graphs = graphs
 
-    def update_op(self, spins_in, update_fraction = 1.0, update_metrics=False):
+        self.v_orders.assign([g.order for g in graphs])
+        self.v_sizes.assign([g.size for g in graphs])
+        self.v_tot_order.assign(sum(g.order for g in graphs))
+        self.v_tot_size.assign(sum(g.size for g in graphs))
+        self.v_fields.assign([g.fields for g in graphs])
+        self.v_temperatures.assign([g.temperatures for g in graphs])
+        self.v_degrees.assign([g.degrees for g in graphs])
+        self.v_node_masks.assign([g.node_mask for g in graphs])
+        self.v_edge_starts.assign([g.edge_starts for g in graphs])
+        self.v_edge_ends.assign([g.edge_ends for g in graphs])
+
+        glob_starts = np.zeros(self.n * self.max_size * 2, dtype=np.int32)
+        glob_ends = np.zeros(self.n * self.max_size * 2, dtype=np.int32)
+        ei = 0
+        for gi, g in enumerate(graphs):
+            assert len(g.edge_starts) == len(g.edge_ends)
+            glob_starts[ei:ei + len(g.edge_starts)] = g.edge_starts + (gi * self.max_order)
+            glob_ends[ei:ei + len(g.edge_ends)] = g.edge_ends + (gi * self.max_order)
+            ei += len(g.edge_ends)
+        self.v_edge_starts_global.assign(glob_starts)
+        self.v_edge_ends_global.assign(glob_ends)
+
+    def update_op(self, spins_in, update_fraction=1.0, update_metrics=True):
         "Returns a resulting spins_out tensor operation"
         with tf.name_scope(self.scope):
             assert spins_in.shape == (self.n, self.max_order)
@@ -100,14 +104,16 @@ class GraphSet:
                     spins_out = tf.identity(spins_out)
             return spins_out
 
-    def components_op(self, iters=16):
-        comp_nums = tf.reshape(tf.range(self.n * self.max_order, dtype=tf.int32), (self.n, self.max_order))
+    @tf.function
+    def largest_components(self, iters=16, for_spin=1.0):
+        K = self.n * self.max_order
+        comp_nums = tf.reshape(tf.range(K, dtype=tf.int32), (self.n, self.max_order))
         edge_mask = None
         for i in range(iters):
             neigh_nums = self.max_neighbors_op(comp_nums, edge_mask=edge_mask)
             comp_nums = tf.maximum(comp_nums, neigh_nums)
-        comp_nums = tf.reshape(comp_nums, [self.n * self.max_order])
-        comp_sizes = tf.math.unsorted_segment_sum(tf.fill([self.n * self.max_order], 1), comp_nums)
+        comp_nums = tf.reshape(comp_nums, [K])
+        comp_sizes = tf.math.unsorted_segment_sum(tf.fill([K], 1), comp_nums, K)
         comp_sizes = tf.reshape(comp_sizes, [self.n, self.max_order])
         max_comp_sizes = tf.reduce_max(comp_sizes, axis=1)
         return max_comp_sizes
@@ -140,3 +146,4 @@ class GraphSet:
         edge_data = tf.gather(node_data_f, self.v_edge_starts_global)
         node_out = tf.math.segment_sum(edge_data, self.v_edge_ends_global)
         return tf.reshape(tf.pad(node_out, [[0, self.max_order - self.orders[self.n - 1]]]), (self.n, self.max_order))
+
