@@ -1,6 +1,3 @@
-import contextlib
-import time
-
 import networkx as nx
 import numpy as np
 import tensorflow as tf
@@ -103,6 +100,19 @@ class GraphSet:
                     spins_out = tf.identity(spins_out)
             return spins_out
 
+    def components_op(self, iters=16):
+        comp_nums = tf.reshape(tf.range(self.n * self.max_order, dtype=tf.int32), (self.n, self.max_order))
+        edge_mask = None
+        for i in range(iters):
+            neigh_nums = self.max_neighbors_op(comp_nums, edge_mask=edge_mask)
+            comp_nums = tf.maximum(comp_nums, neigh_nums)
+        comp_nums = tf.reshape(comp_nums, [self.n * self.max_order])
+        comp_sizes = tf.math.unsorted_segment_sum(tf.fill([self.n * self.max_order], 1), comp_nums)
+        comp_sizes = tf.reshape(comp_sizes, [self.n, self.max_order])
+        max_comp_sizes = tf.reduce_max(comp_sizes, axis=1)
+        return max_comp_sizes
+
+
     def _neighbors_op(self, segment_fn, node_data, edge_mask=None):
         "Return the maxima of node_data of adjacent nodes (not including self)."
         assert node_data.shape == (self.n, self.max_order)
@@ -124,48 +134,9 @@ class GraphSet:
         return self._neighbors_op(tf.math.segment_mean, node_data, edge_mask=edge_mask)
 
     def sum_neighbors_op_2(self, node_data):
-        "Return the maxima of node_data of adjacent nodes (not including self)."
+        "Return the maxima of node_data of adjacent nodes (not including self). (optimized fn?)"
         assert node_data.shape == (self.n, self.max_order)
         node_data_f = tf.reshape(node_data, (self.n * self.max_order,))
         edge_data = tf.gather(node_data_f, self.v_edge_starts_global)
         node_out = tf.math.segment_sum(edge_data, self.v_edge_ends_global)
         return tf.reshape(tf.pad(node_out, [[0, self.max_order - self.orders[self.n - 1]]]), (self.n, self.max_order))
-
-@contextlib.contextmanager
-def timed(name=None):
-    t0 = time.time()
-    yield
-    t1 = time.time()
-    print((name + " " if name else "") + "took {:.3f} ms".format((t1 - t0) * 1000.0))
-
-def test_ops():
-    graphs = [nx.path_graph(3), nx.path_graph(4), nx.path_graph(2)]
-    gs = GraphSet(graphs)
-    gs.construct()
-    data = np.array([[2, 1, 3, 9], [1, 4, 2, -1], [3, 1, 9, 9]])
-    assert (gs.max_neighbors_op(data).numpy() == [[1, 3, 1, 0], [4, 2, 4, 2], [1, 3, 0, 0]]).all()
-    assert (gs.sum_neighbors_op(data).numpy() == [[1, 5, 1, 0], [4, 3, 3, 2], [1, 3, 0, 0]]).all()
-    assert (gs.mean_neighbors_op(data.astype(float)).numpy() == [[1, 2.5, 1, 0], [4, 1.5, 1.5, 2], [1, 3, 0, 0]]).all()
-
-def test_update():
-    graphs = [nx.path_graph(1000)] * 100
-    with timed('init graph set'):
-        gs = GraphSet(graphs)
-        gs.construct()
-
-    @tf.function
-    def repeated(s):
-        for i in range(10):
-            s = gs.update_op(s, 0.5, True)
-        return s
-
-    with timed('repeated #1'):
-        s = repeated(gs.v_spins)
-    with timed('repeated #2'):
-        s = repeated(gs.v_spins)
-    with timed('repeated #3'):
-        s = repeated(gs.v_spins)
-
-
-test_ops()
-test_update()
