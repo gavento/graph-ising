@@ -11,8 +11,7 @@ class GraphIsing:
         if isinstance(graphs_or_n, int):
             self.n = graphs_or_n
         else:
-            assert isinstance(graphs_or_n, list)
-            assert (isinstance(g, TFGraph) for g in graphs_or_n).all()
+            graphs_or_n = list(graphs_or_n)
             self.n = len(graphs_or_n)
 
         self.max_order = max_order
@@ -63,12 +62,12 @@ class GraphIsing:
         self.v_sizes.assign([g.size for g in graphs])
         self.v_tot_order.assign(sum(g.order for g in graphs))
         self.v_tot_size.assign(sum(g.size for g in graphs))
-        self.v_fields.assign([g.fields for g in graphs])
-        self.v_temperatures.assign([g.temperatures for g in graphs])
-        self.v_degrees.assign([g.degrees for g in graphs])
-        self.v_node_masks.assign([g.node_mask for g in graphs])
-        self.v_edge_starts.assign([g.edge_starts for g in graphs])
-        self.v_edge_ends.assign([g.edge_ends for g in graphs])
+        self.v_fields.assign(np.stack([g.fields for g in graphs]))
+        self.v_temperatures.assign(np.stack([g.temperatures for g in graphs]))
+        self.v_degrees.assign(np.stack([g.degrees for g in graphs]))
+        self.v_node_masks.assign(np.stack([g.node_mask for g in graphs]))
+        self.v_edge_starts.assign(np.stack([g.edge_starts for g in graphs]))
+        self.v_edge_ends.assign(np.stack([g.edge_ends for g in graphs]))
 
         glob_starts = np.zeros(self.n * self.max_size * 2, dtype=np.int32)
         glob_ends = np.zeros(self.n * self.max_size * 2, dtype=np.int32)
