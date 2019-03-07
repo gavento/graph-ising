@@ -44,7 +44,7 @@ def test_ops():
     graphs = [nx.path_graph(3), nx.path_graph(4), nx.path_graph(2), nx.Graph()]
     tfgs = [TFGraph(g) for g in graphs]
     gis = GraphIsing(tfgs, 4, 10)
-    data = tf.constant([[2, 1, 3, 9], [1, 4, 2, -1], [3, 1, 9, 9], [6, 5, 0, -1]], dtype=tf.int32)
+    data = tf.constant([[2, 1, 3, 9], [1, 4, 2, -1], [3, 1, 9, 9], [6, 5, 0, -1]], dtype=tf.int64)
     assert (gis.max_neighbors_op(data).numpy() == [[1, 3, 1, 0], [4, 2, 4, 2], [1, 3, 0, 0], [0, 0, 0, 0]]).all()
     assert (gis.sum_neighbors_op(data).numpy() == [[1, 5, 1, 0], [4, 3, 3, 2], [1, 3, 0, 0], [0, 0, 0, 0]]).all()
     assert (gis.mean_neighbors_op(tf.cast(data, tf.float32)).numpy() == [[1, 2.5, 1, 0], [4, 1.5, 1.5, 2], [1, 3, 0, 0], [0, 0, 0, 0]]).all()
@@ -134,46 +134,45 @@ def test_spin_components():
 
 
 def test_bench():
-    dev = get_device()
-    g = nx.grid_2d_graph(100, 100)
-    tfg = TFGraph(g)
-    with tf.device(dev):
+    with tf.device("/device:GPU:0"):
+        g = nx.grid_2d_graph(100, 100)
+        tfg = TFGraph(g)
         gis = GraphIsing([tfg] * 100)
-    s0 = gis.initial_spins()
-    print("Graphs: 100 graphs, 100x100 grid (1M nodes)")
+        s0 = gis.initial_spins()
+        print("Graphs: 100 graphs, 100x100 grid (1M nodes)")
 
-    @tf.function
-    def repeat_update(spins, iters):
-        for i in range(iters):
-            spins = gis.update_op(spins, 0.5)
-        return spins
+        @tf.function
+        def repeat_update(spins, iters):
+            for i in range(iters):
+                spins = gis.update_op(spins, 0.5)
+            return spins
 
-    @tf.function
-    def repeat_components(spins, iters):
-        return gis.largest_component_size_op(spins, iters)
+        @tf.function
+        def repeat_components(spins, iters):
+            return gis.largest_component_size_op(spins, iters)
 
-    @tf.function
-    def repeat_sampled_components(spins, iters):
-        return gis.sampled_largest_component_size_op(spins, iters)
+        @tf.function
+        def repeat_sampled_components(spins, iters):
+            return gis.sampled_largest_component_size_op(spins, iters)
 
-    with timed('warmup'):
-        repeat_update(s0, tf.constant(1))
-    with timed('run 100x updates #1'):
-        repeat_update(s0, tf.constant(100))
-    with timed('run 100x updates #2'):
-        repeat_update(s0, tf.constant(100))
+        with timed('warmup'):
+            repeat_update(s0, tf.constant(1))
+        with timed('run 100x updates #1'):
+            repeat_update(s0, tf.constant(100))
+        with timed('run 100x updates #2'):
+            repeat_update(s0, tf.constant(100))
 
-    with timed('warmup'):
-        repeat_components(s0, tf.constant(1))
-    with timed('run 1x range 100 components #1'):
-        repeat_components(s0, tf.constant(100))
-    with timed('run 1x range 100 components #2'):
-        repeat_components(s0, tf.constant(100))
+        with timed('warmup'):
+            repeat_components(s0, tf.constant(1))
+        with timed('run 1x range 100 components #1'):
+            repeat_components(s0, tf.constant(100))
+        with timed('run 1x range 100 components #2'):
+            repeat_components(s0, tf.constant(100))
 
-    with timed('warmup'):
-        repeat_sampled_components(s0, tf.constant(1))
-    with timed('run 1x range 10 sampled components (10 samples) #1'):
-        repeat_sampled_components(s0, tf.constant(10))
-    with timed('run 1x range 10 sampled components (10 samples) #2'):
-        repeat_sampled_components(s0, tf.constant(10))
+        with timed('warmup'):
+            repeat_sampled_components(s0, tf.constant(1))
+        with timed('run 1x range 10 sampled components (10 samples) #1'):
+            repeat_sampled_components(s0, tf.constant(10))
+        with timed('run 1x range 10 sampled components (10 samples) #2'):
+            repeat_sampled_components(s0, tf.constant(10))
 

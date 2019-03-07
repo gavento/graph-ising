@@ -33,20 +33,20 @@ class GraphIsing:
             return tf.Variable(np.full(shape, val, dtype=t), trainable=False, name=name, dtype=t)
 
         with tf.name_scope(self.scope):
-            self.v_orders = vf([self.n], 0, 'orders', np.int32)
-            self.v_sizes = vf([self.n], 0, 'sizes', np.int32)
-            self.v_tot_order = vf([], 0, 'tot_order', np.int32)
-            self.v_tot_size = vf([], 0, 'tot_size', np.int32)
+            self.v_orders = vf([self.n], 0, 'orders', np.int64)
+            self.v_sizes = vf([self.n], 0, 'sizes', np.int64)
+            self.v_tot_order = vf([], 0, 'tot_order', np.int64)
+            self.v_tot_size = vf([], 0, 'tot_size', np.int64)
             self.v_fields = vf([self.n, self.max_order], 0.0, 'fields')
             self.v_temperatures = vf([self.n, self.max_order], 0.0, 'temperatures')
-            self.v_degrees = vf([self.n, self.max_order], 0, 'degrees', np.int32)
+            self.v_degrees = vf([self.n, self.max_order], 0, 'degrees', np.int64)
             self.v_node_masks = vf([self.n, self.max_order], False, 'node_mask', bool)
             # Edge starts numbered within every graph independently
-            self.v_edge_starts = vf([self.n, self.max_size * 2], 0, 'edge_starts', np.int32)
-            self.v_edge_ends = vf([self.n, self.max_size * 2], 0, 'edge_starts', np.int32)
+            self.v_edge_starts = vf([self.n, self.max_size * 2], 0, 'edge_starts', np.int64)
+            self.v_edge_ends = vf([self.n, self.max_size * 2], 0, 'edge_starts', np.int64)
             # Edge starts numbered globally (by flattened node indices)
-            self.v_edge_starts_global = vf(self.n * self.max_size * 2, 0, 'edge_starts_global', np.int32)
-            self.v_edge_ends_global = vf(self.n * self.max_size * 2, 0, 'edge_starts_global', np.int32)
+            self.v_edge_starts_global = vf(self.n * self.max_size * 2, 0, 'edge_starts_global', np.int64)
+            self.v_edge_ends_global = vf(self.n * self.max_size * 2, 0, 'edge_starts_global', np.int64)
             # Update op metrics
             self.metric_fraction_flipped = tf.keras.metrics.Mean('fraction_flipped')
             self.metric_mean_spin = tf.keras.metrics.Mean('mean_spin')
@@ -79,8 +79,8 @@ class GraphIsing:
         varfill(self.v_edge_starts, [g.edge_starts for g in graphs], self.max_size * 2)
         varfill(self.v_edge_ends, [g.edge_ends for g in graphs], self.max_size * 2)
 
-        glob_starts = np.zeros(self.n * self.max_size * 2, dtype=np.int32)
-        glob_ends = np.zeros(self.n * self.max_size * 2, dtype=np.int32)
+        glob_starts = np.zeros(self.n * self.max_size * 2, dtype=np.int64)
+        glob_ends = np.zeros(self.n * self.max_size * 2, dtype=np.int64)
         ei = 0
         for gi, g in enumerate(graphs):
             k = g.size * 2
@@ -142,23 +142,23 @@ class GraphIsing:
         mean_max_sizes = tf.zeros([self.n], dtype=self.dtype)
         for i in range(drop_samples):
             mean_max_sizes += tf.cast(self.largest_component_size_op(spins, iters, drop_edges, positive_spin), self.dtype)
-        return mean_max_sizes / tf.cast(drop_samples, tf.float32)
+        return mean_max_sizes / tf.cast(drop_samples, self.dtype)
 
     @tf.function
     def largest_component_size_op(self, spins, iters=tf.constant(16), drop_edges=None, positive_spin=True):
         with tf.name_scope(self.scope):
             K = self.n * self.max_order
             if positive_spin:
-                node_mask = tf.cast(spins > 0.0, tf.int32)
+                node_mask = tf.cast(spins > 0.0, tf.int64)
             else:
-                node_mask = tf.cast(spins < 0.0, tf.int32)
+                node_mask = tf.cast(spins < 0.0, tf.int64)
             if drop_edges is not None:
                 lls = tf.math.log([[drop_edges, 1.0 - drop_edges]])
-                edge_mask = tf.reshape(tf.random.categorical(lls, self.v_tot_size * 2), (-1, ))
+                edge_mask = tf.reshape(tf.random.categorical(lls, tf.cast(self.v_tot_size, tf.int32) * 2), (-1, ))
             else:
                 edge_mask = None
 
-            comp_nums = tf.reshape(tf.range(1, K + 1, dtype=tf.int32), (self.n, self.max_order))
+            comp_nums = tf.reshape(tf.range(1, K + 1, dtype=tf.int64), (self.n, self.max_order))
             comp_nums = comp_nums * node_mask
             for i in range(iters):
                 neigh_nums = self.max_neighbors_op(comp_nums, edge_mask=edge_mask)
