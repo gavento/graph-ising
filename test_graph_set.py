@@ -53,54 +53,65 @@ def test_update_and_caching():
         return data
 
     with timed('single #1'):
-        s = repeat(1, s0)
+        s = repeat(tf.constant(1), s0)
     with timed('single #2'):
-        s = repeat(1, s0)
-    with timed('repeated #1'):
-        s = repeat(3, s0)
-    with timed('repeated #2'):
-        s = repeat(3, s0)
+        s = repeat(tf.constant(1), s0)
+    with timed('repeated(10) #1'):
+        s = repeat(tf.constant(10), s0)
+    with timed('repeated(10) #2'):
+        s = repeat(tf.constant(10), s0)
     #print([cf.structured_input_signature for cf in repeat._list_all_concrete_functions_for_serialization()])
-    assert len(repeat._list_all_concrete_functions_for_serialization()) == 2
+    assert len(repeat._list_all_concrete_functions_for_serialization()) == 1
 
     gis.set_graphs([tfg] * K)
     with timed('single #3'):
-        s = repeat(1, s0)
-    assert len(repeat._list_all_concrete_functions_for_serialization()) == 2
+        s = repeat(tf.constant(1), -s0)
+    assert len(repeat._list_all_concrete_functions_for_serialization()) == 1
 
-def test_comps():
+
+def test_graph_components():
     @tf.function
-    def comps(gset, iters):
-        return gset.components_op(iters)
+    def comps(spins, iters):
+        return gis.largest_component_size_op(spins, iters=iters)
 
     graphs = [
         nx.Graph([(0,1), (0,2), (1,2), (2,3), (3,6), (5,4)]), # comp sizes 2, 5
         nx.Graph([(0,1), (0,2), (1,2), (3,6), (5,4)]), # comp sizes 2, 2, 3
         nx.Graph([(0,1), (0,2), (1,2), (2,5), (3,4), (5,4)]), # comp sizes 6, less vertices
     ]
-    gs = GraphSet(graphs)
-    gs.construct()
+    tfgs = [TFGraph(g, 10, 10) for g in graphs]
+    gis = GraphIsing(tfgs, 10, 10)
+    s0 = gis.initial_spins(1.0)
 
-    with timed('gs'):
-        assert (gs.components_op().numpy() == [5, 3, 6]).all()
-    with timed('gs'):
-        assert (comps(gs, 3).numpy() == [5, 3, 6]).all()
-    with timed('gs'):
-        assert (comps(gs, 2).numpy() == [3, 3, 6]).all()
-    with timed('gs rep'):
-        assert (comps(gs, 2).numpy() == [3, 3, 6]).all()
+    with timed('direct'):
+        assert (gis.largest_component_size_op(s0).numpy() == [5, 3, 6]).all()
+    with timed('comps(3) #1'):
+        assert (comps(s0, tf.constant(3)).numpy() == [5, 3, 6]).all()
+    with timed('comps(16) #1'):
+        assert (comps(s0, tf.constant(16)).numpy() == [5, 3, 6]).all()
+    with timed('comps(2) #1'):
+        assert (comps(s0, tf.constant(2)).numpy() == [3, 3, 6]).all()
+    with timed('comps(2) #2'):
+        assert (comps(s0, tf.constant(2)).numpy() == [3, 3, 6]).all()
 
-    gs2 = GraphSet([graphs[1], graphs[0], nx.path_graph(8)])
-    gs2.construct()
-    with timed('gs2'):
-        assert (gs2.components_op().numpy() == [3, 5, 8]).all()
-    with timed('gs2'):
-        assert (comps(gs2, tf.constant(3)).numpy() == [3, 5, 4]).all()
-    with timed('gs2'):
-        assert (comps(gs2, tf.constant(2)).numpy() == [3, 3, 3]).all()
-    with timed('gs2 rep'):
-        assert (comps(gs2, tf.constant(2)).numpy() == [3, 3, 3]).all()
 
-    for f in [comps, gs.components_op, gs.components_op, GraphSet.components_op]:
-        with timed('sigs'):
-            print([(l, l.structured_input_signature) for l in f._list_all_concrete_functions_for_serialization()])
+def test_spin_components():
+    g = nx.grid_2d_graph(4, 4)
+    tfg = TFGraph(g, 16, 30)
+    gis = GraphIsing([tfg] * 4, 16, 30)
+    s0 = tf.constant([
+        [0, 1, 0, 1,  1, 1, 0, 1,  0, 1, 0, 1,  0, 1, 1, 0],
+        [0, 1, 0, 1,  1, 0, 1, 1,  1, 1, 1, 0,  0, 0, 0, 1],
+        [0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0],
+        [1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1],
+        ], tf.float32) * 2 - 1
+    assert (gis.largest_component_size_op(s0).numpy() == [6, 7, 0, 16]).all()
+ 
+    # test edge dropping
+    assert (gis.largest_component_size_op(s0, drop_edges=0.0).numpy() == [6, 7, 0, 16]).all()
+    assert (gis.largest_component_size_op(s0, drop_edges=1.0).numpy() == [1, 1, 0, 1]).all()
+
+    # test averaged edge dropping
+    smpl = gis.sampled_largest_component_size_op(s0, drop_edges=0.2, drop_samples=tf.constant(50))
+    assert (smpl.numpy() <= [6, 7, 0, 16]).all()
+    assert (smpl.numpy() >= [3.5, 4, 0, 14.5]).all()

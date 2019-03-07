@@ -88,15 +88,16 @@ class GraphIsing:
 
     def _neighbors_op(self, segment_fn, node_data, edge_mask=None):
         "Return the maxima of node_data of adjacent nodes (not including self)."
-        assert node_data.shape == (self.n, self.max_order)
-        node_data_f = tf.reshape(node_data, (self.n * self.max_order,))
-        k = self.v_tot_size * 2
-        edge_data = tf.gather(node_data_f, self.v_edge_starts_global[:k])
-        if edge_mask is not None:
-            edge_data = tf.cast(edge_mask, node_data.dtype) * edge_data
-        node_out = segment_fn(edge_data, self.v_edge_ends_global[:k])
-        pad_out = self.n * self.max_order - tf.shape(node_out)[0]
-        return tf.reshape(tf.pad(node_out, [[0, pad_out]]), (self.n, self.max_order))
+        with tf.name_scope(self.scope):
+            assert node_data.shape == (self.n, self.max_order)
+            node_data_f = tf.reshape(node_data, (self.n * self.max_order,))
+            k = self.v_tot_size * 2
+            edge_data = tf.gather(node_data_f, self.v_edge_starts_global[:k])
+            if edge_mask is not None:
+                edge_data = tf.cast(edge_mask, node_data.dtype) * edge_data
+            node_out = segment_fn(edge_data, self.v_edge_ends_global[:k])
+            pad_out = self.n * self.max_order - tf.shape(node_out)[0]
+            return tf.reshape(tf.pad(node_out, [[0, pad_out]]), (self.n, self.max_order))
 
     def sum_neighbors_op(self, node_data, edge_mask=None):
         return self._neighbors_op(tf.math.segment_sum, node_data, edge_mask=edge_mask)
@@ -128,16 +129,36 @@ class GraphIsing:
                 self.metric_mean_spin.update_state(spins_out, self.v_node_masks)
             return spins_out
 
-    @tf.function
-    def largest_components(self, iters=16, for_spin=1.0):
-        K = self.n * self.max_order
-        comp_nums = tf.reshape(tf.range(K, dtype=tf.int32), (self.n, self.max_order))
-        edge_mask = None
-        for i in range(iters):
-            neigh_nums = self.max_neighbors_op(comp_nums, edge_mask=edge_mask)
-            comp_nums = tf.maximum(comp_nums, neigh_nums)
-        comp_nums = tf.reshape(comp_nums, [K])
-        comp_sizes = tf.math.unsorted_segment_sum(tf.fill([K], 1), comp_nums, K)
-        comp_sizes = tf.reshape(comp_sizes, [self.n, self.max_order])
-        max_comp_sizes = tf.reduce_max(comp_sizes, axis=1)
-        return max_comp_sizes
+    def sampled_largest_component_size_op(self, spins, iters=tf.constant(16), drop_edges=tf.constant(0.5), drop_samples=tf.constant(10), positive_spin=True):
+        mean_max_sizes = tf.zeros([self.n], dtype=self.dtype)
+        for i in range(drop_samples):
+            mean_max_sizes += tf.cast(self.largest_component_size_op(spins, iters, drop_edges, positive_spin), self.dtype)
+        return mean_max_sizes / tf.cast(drop_samples, tf.float32)
+
+    def largest_component_size_op(self, spins, iters=tf.constant(16), drop_edges=None, positive_spin=True):
+        with tf.name_scope(self.scope):
+            K = self.n * self.max_order
+            if positive_spin:
+                node_mask = tf.cast(spins > 0.0, tf.int32)
+            else:
+                node_mask = tf.cast(spins < 0.0, tf.int32)
+            if drop_edges is not None:
+                lls = tf.math.log([[drop_edges, 1.0 - drop_edges]])
+                edge_mask = tf.reshape(tf.random.categorical(lls, self.v_tot_size * 2), (-1, ))
+            else:
+                edge_mask = None
+
+            comp_nums = tf.reshape(tf.range(1, K + 1, dtype=tf.int32), (self.n, self.max_order))
+            comp_nums = comp_nums * node_mask
+            for i in range(iters):
+                neigh_nums = self.max_neighbors_op(comp_nums, edge_mask=edge_mask)
+                comp_nums = tf.maximum(comp_nums, neigh_nums)
+                comp_nums = comp_nums * node_mask
+            comp_nums = tf.reshape(comp_nums, [K])
+
+            comp_sizes = tf.math.unsorted_segment_sum(tf.fill([K], 1), comp_nums, K + 1)
+            comp_sizes = comp_sizes[1:]  # drop the 0-component
+            comp_sizes = tf.reshape(comp_sizes, [self.n, self.max_order])
+
+            max_comp_sizes = tf.reduce_max(comp_sizes, axis=1)
+            return max_comp_sizes
