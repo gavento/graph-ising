@@ -1,6 +1,16 @@
 import contextlib
 import time
 
+import tensorflow as tf
+
+def get_device():
+    "Return a valid device, preferably a GPU"
+    ds = tf.config.experimental_list_devices()
+    for d in ds:
+        if 'GPU' in d:
+            return d
+    return ds[0]
+
 
 @contextlib.contextmanager
 def timed(name=None):

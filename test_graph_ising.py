@@ -4,7 +4,7 @@ import tensorflow as tf
 from tensorflow.python.ops import control_flow_util
 
 from graph_ising import GraphIsing, TFGraph
-from utils import timed
+from utils import timed, get_device
 
 control_flow_util.ENABLE_CONTROL_FLOW_V2 = True
 tf.autograph.set_verbosity(0, alsologtostdout=True)
@@ -134,9 +134,11 @@ def test_spin_components():
 
 
 def test_bench():
+    dev = get_device()
     g = nx.grid_2d_graph(100, 100)
     tfg = TFGraph(g)
-    gis = GraphIsing([tfg] * 100)
+    with tf.device(dev):
+        gis = GraphIsing([tfg] * 100)
     s0 = gis.initial_spins()
     print("Graphs: 100 graphs, 100x100 grid (1M nodes)")
 
