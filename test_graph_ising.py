@@ -131,3 +131,47 @@ def test_spin_components():
     smpl = gis.sampled_largest_component_size_op(s0, drop_edges=0.2, drop_samples=tf.constant(50))
     assert (smpl.numpy() <= [6, 7, 0, 16]).all()
     assert (smpl.numpy() >= [3.5, 4, 0, 14.5]).all()
+
+
+def test_bench():
+    g = nx.grid_2d_graph(100, 100)
+    tfg = TFGraph(g)
+    gis = GraphIsing([tfg] * 100)
+    s0 = gis.initial_spins()
+    print("Graphs: 100 graphs, 100x100 grid (1M nodes)")
+
+    @tf.function
+    def repeat_update(spins, iters):
+        for i in range(iters):
+            spins = gis.update_op(spins, 0.5)
+        return spins
+
+    @tf.function
+    def repeat_components(spins, iters):
+        return gis.largest_component_size_op(spins, iters)
+
+    @tf.function
+    def repeat_sampled_components(spins, iters):
+        return gis.sampled_largest_component_size_op(spins, iters)
+
+    with timed('warmup'):
+        repeat_update(s0, tf.constant(1))
+    with timed('run 100x updates #1'):
+        repeat_update(s0, tf.constant(100))
+    with timed('run 100x updates #2'):
+        repeat_update(s0, tf.constant(100))
+
+    with timed('warmup'):
+        repeat_components(s0, tf.constant(1))
+    with timed('run 1x range 100 components #1'):
+        repeat_components(s0, tf.constant(100))
+    with timed('run 1x range 100 components #2'):
+        repeat_components(s0, tf.constant(100))
+
+    with timed('warmup'):
+        repeat_sampled_components(s0, tf.constant(1))
+    with timed('run 1x range 100 sampled components (10 samples) #1'):
+        repeat_sampled_components(s0, tf.constant(1))
+    with timed('run 1x range 100 sampled components (10 samples) #2'):
+        repeat_sampled_components(s0, tf.constant(1))
+

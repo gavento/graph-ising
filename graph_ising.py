@@ -144,6 +144,7 @@ class GraphIsing:
             mean_max_sizes += tf.cast(self.largest_component_size_op(spins, iters, drop_edges, positive_spin), self.dtype)
         return mean_max_sizes / tf.cast(drop_samples, tf.float32)
 
+    @tf.function
     def largest_component_size_op(self, spins, iters=tf.constant(16), drop_edges=None, positive_spin=True):
         with tf.name_scope(self.scope):
             K = self.n * self.max_order
