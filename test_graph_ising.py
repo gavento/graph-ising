@@ -170,8 +170,8 @@ def test_bench():
 
     with timed('warmup'):
         repeat_sampled_components(s0, tf.constant(1))
-    with timed('run 1x range 100 sampled components (10 samples) #1'):
-        repeat_sampled_components(s0, tf.constant(1))
-    with timed('run 1x range 100 sampled components (10 samples) #2'):
-        repeat_sampled_components(s0, tf.constant(1))
+    with timed('run 1x range 10 sampled components (10 samples) #1'):
+        repeat_sampled_components(s0, tf.constant(10))
+    with timed('run 1x range 10 sampled components (10 samples) #2'):
+        repeat_sampled_components(s0, tf.constant(10))
 
