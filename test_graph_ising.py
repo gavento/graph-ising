@@ -84,6 +84,8 @@ def test_update_and_caching():
         s = repeat(tf.constant(1), -s0)
     assert len(repeat._list_all_concrete_functions_for_serialization()) == 1
 
+    gis.log_metrics()
+
 
 def test_graph_components():
     @tf.function
@@ -99,6 +101,8 @@ def test_graph_components():
     gis = GraphIsing(tfgs, 10, 10)
     s0 = gis.initial_spins(1.0)
 
+    with timed('direct'):
+        assert (gis.largest_cluster(s0).numpy() == [5, 3, 6]).all()
     with timed('comps(3) #1'):
         assert (comps(s0, tf.constant(3)).numpy() == [5, 3, 6]).all()
     with timed('comps(16) #1'):
@@ -107,6 +111,8 @@ def test_graph_components():
         assert (comps(s0, tf.constant(2)).numpy() == [3, 3, 6]).all()
     with timed('comps(2) #2'):
         assert (comps(s0, tf.constant(2)).numpy() == [3, 3, 6]).all()
+
+    gis.log_metrics()
 
 
 def test_spin_components():
@@ -130,28 +136,33 @@ def test_spin_components():
     assert (smpl.numpy() <= [6, 7, 0, 16]).all()
     assert (smpl.numpy() >= [3.5, 4, 0, 14.5]).all()
 
+    gis.log_metrics()
+
 
 def test_bench():
-    with tf.device("/device:GPU:0"):
-        g = nx.grid_2d_graph(100, 100)
+    with tf.device("/device:CPU:0"):
+        N = 1000
+        K = 1000
+        g = nx.random_graphs.powerlaw_cluster_graph(N, 5, 0.5)
         tfg = TFGraph(g)
-        gis = GraphIsing([tfg] * 100)
-        s0 = gis.initial_spins()
-        print("Graphs: 100 graphs, 100x100 grid (1M nodes)")
+        gis = GraphIsing([tfg] * K)
+        s0 = gis.initial_spins(-1.0)
+        s1 = gis.initial_spins(1.0)
+        print("Graphs: {} powerlaw graphs, {} nodes ({} tot nodes)".format(K, N, N * K))
 
         @tf.function
         def repeat_update(spins, iters):
             for i in range(iters):
-                spins = gis.update_op(spins, 0.5)
+                spins = gis.update(spins, 0.5)
             return spins
 
         @tf.function
-        def repeat_components(spins, iters):
-            return gis.largest_cluster(spins, iters)
+        def repeat_components(spins):
+            return gis.largest_cluster(spins)
 
         @tf.function
-        def repeat_sampled_components(spins, iters):
-            return gis.sampled_largest_cluster(spins, iters)
+        def repeat_sampled_components(spins, samples):
+            return gis.sampled_largest_cluster(spins, samples=samples)
 
         with timed('warmup'):
             repeat_update(s0, tf.constant(1))
@@ -161,16 +172,17 @@ def test_bench():
             repeat_update(s0, tf.constant(100))
 
         with timed('warmup'):
-            repeat_components(s0, tf.constant(1))
-        with timed('run 1x range 100 components #1'):
-            repeat_components(s0, tf.constant(100))
-        with timed('run 1x range 100 components #2'):
-            repeat_components(s0, tf.constant(100))
+            repeat_components(s1)
+        with timed('run 1x components #1'):
+            repeat_components(s1)
+        with timed('run 1x components #2'):
+            repeat_components(s1)
 
         with timed('warmup'):
-            repeat_sampled_components(s0, tf.constant(1))
-        with timed('run 1x range 10 sampled components (10 samples) #1'):
-            repeat_sampled_components(s0, tf.constant(10))
-        with timed('run 1x range 10 sampled components (10 samples) #2'):
-            repeat_sampled_components(s0, tf.constant(10))
+            repeat_sampled_components(s1, tf.constant(1))
+        with timed('run 1x sampled components (10 samples) #1'):
+            repeat_sampled_components(s1, tf.constant(10))
+        with timed('run 1x sampled components (10 samples) #2'):
+            repeat_sampled_components(s1, tf.constant(10))
 
+        gis.log_metrics()

@@ -48,6 +48,9 @@ class GraphIsing:
             # Edge starts numbered globally (by flattened node indices)
             self.v_edge_starts_global = vf(self.n * self.max_size * 2, 0, 'edge_starts_global', np.int64)
             self.v_edge_ends_global = vf(self.n * self.max_size * 2, 0, 'edge_starts_global', np.int64)
+
+            self._find_components_create_vars()
+
             # Update op metrics
             def new_mmetric(name):
                 m = tf.keras.metrics.Mean(name)
@@ -149,6 +152,14 @@ class GraphIsing:
         self.metric_update_mean_spin.update_state(spins_out, self.v_node_masks)
         return spins_out
 
+    def _find_components_create_vars(self):
+        "Create variables for find_components and friends"
+        self.v_FC_comp_nums = tf.Variable(tf.zeros([self.n, self.max_order], dtype=tf.int64))
+        self.v_FC_iters = tf.Variable(0, dtype=tf.int64)
+        self.v_FC_unfinished = tf.Variable(0.0, dtype=self.dtype)
+        self.v_FC_run = tf.Variable(True)
+        self.V_SLC_mean_max_sizes = tf.Variable(tf.zeros([self.n], dtype=self.dtype))
+
     def find_components(self, node_mask=None, edge_mask=None, max_iters=32):
         """
         Return component numbers for every vertex as shape [n, order].
@@ -161,10 +172,14 @@ class GraphIsing:
         if node_mask is not None:
             initial_comp_nums = initial_comp_nums * node_mask
 
-        comp_nums = tf.Variable(initial_comp_nums, dtype=tf.int64)
-        iters = tf.Variable(0, dtype=tf.int64)
-        unfinished = tf.Variable(0.0, dtype=self.dtype)
-        run = tf.Variable(True)
+        comp_nums = self.v_FC_comp_nums
+        comp_nums.assign(initial_comp_nums)
+        iters = self.v_FC_iters
+        iters.assign(0)
+        unfinished = self.v_FC_unfinished
+        unfinished.assign(0.0)
+        run = self.v_FC_run
+        run.assign(True)
 
         while run:
             neigh_nums = self.max_neighbors(comp_nums, edge_mask=edge_mask)
@@ -214,7 +229,8 @@ class GraphIsing:
         """
         Mean largest_cluster over several samples.
         """
-        mean_max_sizes = tf.Variable(tf.zeros([self.n], dtype=self.dtype))
+        mean_max_sizes = self.V_SLC_mean_max_sizes
+        mean_max_sizes.assign(tf.zeros([self.n], dtype=self.dtype))
         for i in range(samples):
             largest = self.largest_cluster(spins, positive_spin=positive_spin, drop_edges=drop_edges, max_iters=max_iters)
             mean_max_sizes.assign_add(tf.cast(largest, self.dtype))
