@@ -45,12 +45,12 @@ def test_ops():
     tfgs = [TFGraph(g) for g in graphs]
     gis = GraphIsing(tfgs, 4, 10)
     data = tf.constant([[2, 1, 3, 9], [1, 4, 2, -1], [3, 1, 9, 9], [6, 5, 0, -1]], dtype=tf.int64)
-    assert (gis.max_neighbors_op(data).numpy() == [[1, 3, 1, 0], [4, 2, 4, 2], [1, 3, 0, 0], [0, 0, 0, 0]]).all()
-    assert (gis.sum_neighbors_op(data).numpy() == [[1, 5, 1, 0], [4, 3, 3, 2], [1, 3, 0, 0], [0, 0, 0, 0]]).all()
-    assert (gis.mean_neighbors_op(tf.cast(data, tf.float32)).numpy() == [[1, 2.5, 1, 0], [4, 1.5, 1.5, 2], [1, 3, 0, 0], [0, 0, 0, 0]]).all()
+    assert (gis.max_neighbors(data).numpy() == [[1, 3, 1, 0], [4, 2, 4, 2], [1, 3, 0, 0], [0, 0, 0, 0]]).all()
+    assert (gis.sum_neighbors(data).numpy() == [[1, 5, 1, 0], [4, 3, 3, 2], [1, 3, 0, 0], [0, 0, 0, 0]]).all()
+    assert (gis.mean_neighbors(tf.cast(data, tf.float32)).numpy() == [[1, 2.5, 1, 0], [4, 1.5, 1.5, 2], [1, 3, 0, 0], [0, 0, 0, 0]]).all()
     edge_mask = tf.constant([1, 1, 0, 0] + [1] * 8)
-    assert (gis.max_neighbors_op(data, edge_mask=edge_mask).numpy()[0] == [1, 2, 0, 0]).all()
-    assert (gis.sum_neighbors_op(data, edge_mask=edge_mask).numpy()[0] == [1, 2, 0, 0]).all()
+    assert (gis.max_neighbors(data, edge_mask=edge_mask).numpy()[0] == [1, 2, 0, 0]).all()
+    assert (gis.sum_neighbors(data, edge_mask=edge_mask).numpy()[0] == [1, 2, 0, 0]).all()
 
 
 def test_update_and_caching():
@@ -65,7 +65,7 @@ def test_update_and_caching():
     @tf.function
     def repeat(iters, data):
         for i in range(iters):
-            data = gis.update_op(data, 0.5)
+            data = gis.update(data, 0.5)
         return data
 
     with timed('single #1'):
@@ -88,7 +88,7 @@ def test_update_and_caching():
 def test_graph_components():
     @tf.function
     def comps(spins, iters):
-        return gis.largest_component_size_op(spins, iters=iters)
+        return gis.largest_cluster(spins, max_iters=iters)
 
     graphs = [
         nx.Graph([(0,1), (0,2), (1,2), (2,3), (3,6), (5,4)]), # comp sizes 2, 5
@@ -99,8 +99,6 @@ def test_graph_components():
     gis = GraphIsing(tfgs, 10, 10)
     s0 = gis.initial_spins(1.0)
 
-    with timed('direct'):
-        assert (gis.largest_component_size_op(s0).numpy() == [5, 3, 6]).all()
     with timed('comps(3) #1'):
         assert (comps(s0, tf.constant(3)).numpy() == [5, 3, 6]).all()
     with timed('comps(16) #1'):
@@ -121,14 +119,14 @@ def test_spin_components():
         [0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0],
         [1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1],
         ], tf.float32) * 2 - 1
-    assert (gis.largest_component_size_op(s0).numpy() == [6, 7, 0, 16]).all()
+    assert (gis.largest_cluster(s0).numpy() == [6, 7, 0, 16]).all()
  
     # test edge dropping
-    assert (gis.largest_component_size_op(s0, drop_edges=0.0).numpy() == [6, 7, 0, 16]).all()
-    assert (gis.largest_component_size_op(s0, drop_edges=1.0).numpy() == [1, 1, 0, 1]).all()
+    assert (gis.largest_cluster(s0, drop_edges=0.0).numpy() == [6, 7, 0, 16]).all()
+    assert (gis.largest_cluster(s0, drop_edges=1.0).numpy() == [1, 1, 0, 1]).all()
 
     # test averaged edge dropping
-    smpl = gis.sampled_largest_component_size_op(s0, drop_edges=0.2, drop_samples=tf.constant(50))
+    smpl = gis.sampled_largest_cluster(s0, drop_edges=0.2, samples=tf.constant(50))
     assert (smpl.numpy() <= [6, 7, 0, 16]).all()
     assert (smpl.numpy() >= [3.5, 4, 0, 14.5]).all()
 
@@ -149,11 +147,11 @@ def test_bench():
 
         @tf.function
         def repeat_components(spins, iters):
-            return gis.largest_component_size_op(spins, iters)
+            return gis.largest_cluster(spins, iters)
 
         @tf.function
         def repeat_sampled_components(spins, iters):
-            return gis.sampled_largest_component_size_op(spins, iters)
+            return gis.sampled_largest_cluster(spins, iters)
 
         with timed('warmup'):
             repeat_update(s0, tf.constant(1))
