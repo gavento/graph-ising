@@ -3,7 +3,7 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.python.ops import control_flow_util
 
-from graph_set import GraphIsing, TFGraph
+from graph_ising import GraphIsing, TFGraph
 from utils import timed
 
 control_flow_util.ENABLE_CONTROL_FLOW_V2 = True
@@ -11,9 +11,10 @@ tf.autograph.set_verbosity(0, alsologtostdout=True)
 
 
 def test_create():
-    N = 1000
-    K = 1000
+    N = 10
+    K = 10
     g = nx.random_graphs.powerlaw_cluster_graph(N, 3, 0.5)
+    # test exact sizes
     with timed('TFGraph'):
         tfg = TFGraph(g, N, N * 4)
     with timed('GraphIsing'):
@@ -23,10 +24,25 @@ def test_create():
     with timed('GraphIsing (with graphs)'):
         gis2 = GraphIsing([tfg] * K, N, N * 4)
 
+    # smaller grapn can be set to gis
+    with timed('set_graphs with smaller TFGraph'):
+        g2 = nx.random_graphs.powerlaw_cluster_graph(N / 2, 3, 0.5)
+        tfg2 = TFGraph(g2)
+        gis.set_graphs([tfg2] * (2 * K // 3))
+    assert (gis.v_node_masks.numpy()[0, :g2.order()] == True).all()
+    assert (gis.v_node_masks.numpy()[0, g2.order():] == False).all()
+
+    # gis with auto sizes
+    with timed('auto sized TFGraph and GraphIsing'):
+        g3 = nx.random_graphs.powerlaw_cluster_graph(N, 3, 0.5)
+        tfg3 = TFGraph(g3)
+        gis3 = GraphIsing([tfg3] * K)
+        gis.set_graphs([tfg2] * K)
+
 
 def test_ops():
     graphs = [nx.path_graph(3), nx.path_graph(4), nx.path_graph(2), nx.Graph()]
-    tfgs = [TFGraph(g, 4, 10) for g in graphs]
+    tfgs = [TFGraph(g) for g in graphs]
     gis = GraphIsing(tfgs, 4, 10)
     data = tf.constant([[2, 1, 3, 9], [1, 4, 2, -1], [3, 1, 9, 9], [6, 5, 0, -1]], dtype=tf.int32)
     assert (gis.max_neighbors_op(data).numpy() == [[1, 3, 1, 0], [4, 2, 4, 2], [1, 3, 0, 0], [0, 0, 0, 0]]).all()
@@ -42,7 +58,7 @@ def test_update_and_caching():
     K = 100
     g = nx.random_graphs.powerlaw_cluster_graph(N, 3, 0.5)
     with timed('TFGraph and GraphIsing'):
-        tfg = TFGraph(g, N, N * 4)
+        tfg = TFGraph(g)
         gis = GraphIsing([tfg] * K, N, N * 4)
         s0 = gis.initial_spins(-1.0)
 
@@ -79,7 +95,7 @@ def test_graph_components():
         nx.Graph([(0,1), (0,2), (1,2), (3,6), (5,4)]), # comp sizes 2, 2, 3
         nx.Graph([(0,1), (0,2), (1,2), (2,5), (3,4), (5,4)]), # comp sizes 6, less vertices
     ]
-    tfgs = [TFGraph(g, 10, 10) for g in graphs]
+    tfgs = [TFGraph(g) for g in graphs]
     gis = GraphIsing(tfgs, 10, 10)
     s0 = gis.initial_spins(1.0)
 
@@ -97,7 +113,7 @@ def test_graph_components():
 
 def test_spin_components():
     g = nx.grid_2d_graph(4, 4)
-    tfg = TFGraph(g, 16, 30)
+    tfg = TFGraph(g)
     gis = GraphIsing([tfg] * 4, 16, 30)
     s0 = tf.constant([
         [0, 1, 0, 1,  1, 1, 0, 1,  0, 1, 0, 1,  0, 1, 1, 0],

@@ -41,9 +41,9 @@ class TFGraph:
                 ei += 1
         assert ei == self.size * 2
 
-    def initial_spins(self, value=-1.0):
-        "Returns initial spin values as `tf.constant`."
-        spins = np.full(self.max_order, value)
+    def initial_spins(self, size, value=-1.0):
+        "Returns initial spin values (padded to `size`) as `tf.constant`."
+        spins = np.full(size, value)
         spins[self.order:] = 0.0
         return tf.constant(spins, dtype=self.dtype)
 

@@ -7,12 +7,17 @@ from utils import timed
 
 
 class GraphIsing:
-    def __init__(self, graphs_or_n, max_order, max_size, scope='ising'):
+    def __init__(self, graphs_or_n, max_order=None, max_size=None, scope='ising'):
         if isinstance(graphs_or_n, int):
             self.n = graphs_or_n
+            assert (max_order is not None) and (max_size is not None)
         else:
             graphs_or_n = list(graphs_or_n)
             self.n = len(graphs_or_n)
+            if max_order is None:
+                max_order = max(g.order for g in graphs_or_n)
+            if max_size is None:
+                max_size = max(g.size for g in graphs_or_n)
 
         self.max_order = max_order
         self.max_size = max_size
@@ -53,8 +58,8 @@ class GraphIsing:
         "Use given TFGraphs reusing the same variables and computation graph"
         graphs = list(graphs)
         assert all(isinstance(g, TFGraph) for g in graphs)
-        assert all(g.max_order == self.max_order for g in graphs)
-        assert all(g.max_size == self.max_size for g in graphs)
+        assert all(g.max_order <= self.max_order for g in graphs)
+        assert all(g.max_size <= self.max_size for g in graphs)
         assert len(graphs) <= self.n
         graphs.extend([self.empty_graph] * (self.n - len(graphs)))
         self.graphs = graphs
@@ -63,12 +68,16 @@ class GraphIsing:
         self.v_sizes.assign([g.size for g in graphs])
         self.v_tot_order.assign(sum(g.order for g in graphs))
         self.v_tot_size.assign(sum(g.size for g in graphs))
-        self.v_fields.assign(np.stack([g.fields for g in graphs]))
-        self.v_temperatures.assign(np.stack([g.temperatures for g in graphs]))
-        self.v_degrees.assign(np.stack([g.degrees for g in graphs]))
-        self.v_node_masks.assign(np.stack([g.node_mask for g in graphs]))
-        self.v_edge_starts.assign(np.stack([g.edge_starts for g in graphs]))
-        self.v_edge_ends.assign(np.stack([g.edge_ends for g in graphs]))
+
+        def varfill(var, d, l):
+            var.assign(np.stack([np.pad(a, [(0, l - len(a))], 'constant') for a in d]))
+
+        varfill(self.v_fields, [g.fields for g in graphs], self.max_order)
+        varfill(self.v_temperatures, [g.temperatures for g in graphs], self.max_order)
+        varfill(self.v_degrees, [g.degrees for g in graphs], self.max_order)
+        varfill(self.v_node_masks, [g.node_mask for g in graphs], self.max_order)
+        varfill(self.v_edge_starts, [g.edge_starts for g in graphs], self.max_size * 2)
+        varfill(self.v_edge_ends, [g.edge_ends for g in graphs], self.max_size * 2)
 
         glob_starts = np.zeros(self.n * self.max_size * 2, dtype=np.int32)
         glob_ends = np.zeros(self.n * self.max_size * 2, dtype=np.int32)
@@ -84,7 +93,7 @@ class GraphIsing:
 
     def initial_spins(self, value=-1.0):
         "Returns initial spin values as `tf.constant`."
-        return tf.constant(np.stack([g.initial_spins(value) for g in self.graphs]), dtype=self.dtype)
+        return tf.constant(np.stack([g.initial_spins(self.max_order, value) for g in self.graphs]), dtype=self.dtype)
 
     def _neighbors_op(self, segment_fn, node_data, edge_mask=None):
         "Return the maxima of node_data of adjacent nodes (not including self)."
