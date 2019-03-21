@@ -26,6 +26,16 @@ class GraphSet(Base):
         # Per-edge
         self._add_copy_var('edges', dtype=self.itype)
 
+    def split_to_graphs(self, data, by_size=False):
+        """
+        Split the given (flat) data into a RaggedTensor by graphs, by default by vertices.
+        """
+        if by_size:
+            lens = self.v_sizes
+        else:
+            lens = self.v_orders
+        return tf.RaggedTensor.from_row_lengths(data, lens)
+
     def _set_graphs(self, graphs):
         """
         Assumes the nodes are numbered 0 .. order-1 (use relabel to convert on load)
