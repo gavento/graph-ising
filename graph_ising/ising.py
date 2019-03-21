@@ -3,19 +3,13 @@ import numpy as np
 import tensorflow.compat.v2 as tf
 
 from .graph_set import GraphSet
+from .components import ComponentsMixin
 
+class GraphSetIsing(ComponentsMixin, GraphSet):
 
-class GraphSetIsing(GraphSet):
+    def __init__(self, *, T=1.0, F=0.0, J=1.0, p_update=1.0, **kwargs):
+        super().__init__(**kwargs)
 
-    _VARS = GraphSet._VARS + [
-        ('T', [None], np.float32),
-        ('F', [None], np.float32),
-        ('J', [None], np.float32),
-        ('p_update', [None], np.float32),
-        ]
-
-    def __init__(self, graphs, T=1.0, F=0.0, J=1.0, p_update=1.0):
-        super().__init__(graphs)
         def expand_to_every(v, sizes, dtype=np.float32):
             if isinstance(v, (int, float, np.number)):
                 v = [v] * len(sizes)
@@ -27,6 +21,7 @@ class GraphSetIsing(GraphSet):
                     assert(len(x) == s)
                     r.extend(x)
             return np.array(r, dtype=dtype)
+
         self.T = expand_to_every(T, self.orders)
         self.F = expand_to_every(F, self.orders)
         self.J = expand_to_every(J, self.sizes)
@@ -37,11 +32,8 @@ class GraphSetIsing(GraphSet):
         self._add_copy_var('J')
         self._add_copy_var('p_update')
 
-        self.m_update_flipped = self._add_mean_metric('update/flipped')
-        self.m_update_mean_spin = self._add_mean_metric('update/mean_spin')
-        self.m_components_unfinished = self._add_mean_metric('components/unfinished')
-        self.m_components_iterations = self._add_mean_metric('components/iterations')
-
+        self.m_U_flipped = self._add_mean_metric('update/flipped')
+        self.m_U_mean_spin = self._add_mean_metric('update/mean_spin')
 
     def update(self, spins_in, update_fraction=tf.constant(1.0), update_metrics=True):
         "Returns a resulting spins_out tensor operation"
@@ -57,6 +49,14 @@ class GraphSetIsing(GraphSet):
         # update spins
         spins_out = (1.0 - tf.cast(flip, tf.float32) * 2.0) * spins_in
         # metrics
-        self.metric_update_flipped.update_state(tf.cast(flip, tf.float32), update) # TODO: distinguish with self.v_p_update
-        self.metric_update_mean_spin.update_state(spins_out)
+        self.m_U_flipped.update_state(tf.cast(flip, tf.float32), update) # TODO: distinguish with self.v_p_update
+        self.m_U_mean_spin.update_state(spins_out)
         return spins_out
+
+    def largest_clusters(self, spins, positive_spin=True, edge_mask=None, max_iters=16):
+        if positive_spin:
+            node_mask = spins > 0.0
+        else:
+            node_mask = spins < 0.0
+        self.largest_components(node_mask=node_mask, edge_mask=edge_mask, max_iters=max_iters)
+

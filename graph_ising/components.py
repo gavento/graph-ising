@@ -1,16 +1,22 @@
 from .graph_set import GraphSet
+import tensorflow.compat.v2 as tf
+
 
 class ComponentsMixin(GraphSet):
 
-    def _create_vars(self):
+    def __init__(self, **kwargs):
         "Create variables for find_components and friends"
-        self.v_FC_comp_nums = tf.Variable(tf.zeros(self.order, dtype=tf.int64))
-        self.v_FC_iters = tf.Variable(0, dtype=tf.int64)
-        self.v_FC_unfinished = tf.Variable(0.0, dtype=self.DTYPE)
-        self.v_FC_run = tf.Variable(True)
-        self.V_SLC_mean_max_sizes = tf.Variable(tf.zeros([self.n], dtype=self.DTYPE))
+        super().__init__(**kwargs)
 
-    def find_components(self, node_mask=None, edge_mask=None, max_iters=tf.constant(32)):
+        self._add_var('C_comp_nums', tf.zeros([self.v_order], dtype=self.itype))
+        self._add_var('C_iters', 0, dtype=self.itype)
+        self._add_var('C_unfinished', 0.0, dtype=self.ftype)
+        self._add_var('C_run', True)
+        self._add_var('C_mean_max_sizes', tf.zeros([self.v_n], dtype=self.ftype))
+        self.m_C_unfinished = self._add_mean_metric('components/unfinished')
+        self.m_C_iterations = self._add_mean_metric('components/iterations')
+
+    def find_components(self, node_mask=None, edge_mask=None, max_iters=16):
         """
         Return component numbers for every vertex as shape [n, order].
         Components are numbered 1 .. (n * max_order), comp 0 is used for masked and
@@ -22,67 +28,60 @@ class ComponentsMixin(GraphSet):
         if node_mask is not None:
             initial_comp_nums = initial_comp_nums * node_mask
 
-        # Alias and init variables
-        comp_nums = self.v_FC_comp_nums
+        # Alias and init variables (NOTE: actually local variables)
+        comp_nums = self.v_C_comp_nums
         comp_nums.assign(initial_comp_nums)
-        iters = self.v_FC_iters
+        iters = self.v_C_iters
         iters.assign(0)
-        unfinished = self.v_FC_unfinished
+        unfinished = self.v_C_unfinished
         unfinished.assign(0.0)
-        run = self.v_FC_run
+        run = self.v_C_run
         run.assign(True)
 
         while run:
-            neigh_nums = self.max_neighbors(comp_nums, edge_mask=edge_mask)
-            mask_neigh_nums = neigh_nums if node_mask is None else neigh_nums * tf.cast(node_mask, tf.int64)
+            neigh_nums = self.max_neighbors(comp_nums, edge_weights=edge_mask)
+            mask_neigh_nums = neigh_nums if node_mask is None else neigh_nums * tf.cast(node_mask, self.itype)
             new_comp_nums = tf.maximum(comp_nums, mask_neigh_nums)
             iters.assign_add(1)
             if tf.reduce_all(tf.equal(new_comp_nums, comp_nums)):
                 run.assign(False)
             comp_nums.assign(new_comp_nums)
-            if iters >= tf.cast(max_iters, tf.int64):
+            if iters >= tf.cast(max_iters, self.itype):
                 unfinished.assign(1.0)
                 run.assign(False)
 
-        self.metric_components_unfinished.update_state(unfinished)
-        self.metric_components_iterations.update_state(tf.cast(iters, tf.float32))
+        self.m_C_unfinished.update_state(unfinished)
+        self.m_C_iterations.update_state(tf.cast(iters, tf.float32))
 
         if node_mask is not None:
-            comp_nums == comp_nums * tf.cast(node_mask, tf.int64)
+            comp_nums == comp_nums * tf.cast(node_mask, self.itype)
         return tf.identity(comp_nums)
 
-    def largest_cluster(self, spins, positive_spin=True, drop_edges=None, max_iters=32):
-        """
-        Return the size of larges positive (res. negative) spin cluster for every graph.
-        If given, `drop_edges`-fraction of edges is ignored.
-        """
-        K = self.n * self.max_order
-        if positive_spin:
-            node_mask = tf.cast(spins > 0.0, tf.int64)
-        else:
-            node_mask = tf.cast(spins < 0.0, tf.int64)
-        if drop_edges is not None:
-            lls = tf.math.log([[drop_edges, 1.0 - drop_edges]])
-            edge_mask = tf.reshape(tf.random.categorical(lls, tf.cast(self.v_tot_size, tf.int32) * 2), (-1, ))
-        else:
-            edge_mask = None
-
+    def largest_components(self, node_mask=None, edge_mask=None, max_iters=16):
+        "Return the largest component size for every graph."
         comp_nums = self.find_components(node_mask=node_mask, edge_mask=edge_mask, max_iters=max_iters)
-        comp_nums = tf.reshape(comp_nums, [K])
-        comp_sizes = tf.math.unsorted_segment_sum(tf.fill([K], 1), comp_nums, K + 1)
+        K = tf.cast(self.v_order + 1, tf.int32)
+        comp_sizes = tf.math.bincount(tf.cast(comp_nums, dtype=tf.int32), minlength=K, maxlength=K)
         comp_sizes = comp_sizes[1:]  # drop the 0-th component
-        comp_sizes = tf.reshape(comp_sizes, [self.n, self.max_order])
+        return tf.math.segment_max(comp_sizes, self.v_batch)
 
-        max_comp_sizes = tf.reduce_max(comp_sizes, axis=1)
-        return max_comp_sizes
+    def mean_largest_components(self, node_mask=None, edge_mask=None, drop_edges=0.5, samples=10, max_iters=16):
+        """
+        Mean largest components over several samples of differet edge-drops.
 
-    def sampled_largest_cluster(self, spins, positive_spin=True, drop_edges=tf.constant(0.5), samples=tf.constant(10), max_iters=32):
+        Dropping is combined with `edge_mask` if provided.
         """
-        Mean largest_cluster over several samples.
-        """
-        mean_max_sizes = self.V_SLC_mean_max_sizes
-        mean_max_sizes.assign(tf.zeros([self.n], dtype=self.dtype))
+        samples = tf.identity(samples)
+        drop_edges = tf.identity(drop_edges)
+        # Alias and reset vars
+        mean_max_sizes = self.v_C_mean_max_sizes
+        mean_max_sizes.assign(tf.zeros([self.n], dtype=self.ftype))
+
         for i in range(samples):
-            largest = self.largest_cluster(spins, positive_spin=positive_spin, drop_edges=drop_edges, max_iters=max_iters)
-            mean_max_sizes.assign_add(tf.cast(largest, self.dtype))
-        return mean_max_sizes / tf.cast(samples, self.dtype)
+            em = tf.random.uniform([self.v_size]) < drop_edges
+            if edge_mask is not None:
+                em = em & edge_mask
+            largest = self.largest_components(node_mask=node_mask, edge_mask=em, max_iters=max_iters)
+            mean_max_sizes.assign_add(tf.cast(largest, self.ftype))
+        return mean_max_sizes / tf.cast(samples, self.ftype)
+

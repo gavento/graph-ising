@@ -1,7 +1,7 @@
 import contextlib
 import time
 
-import tensorflow as tf
+import tensorflow.compat.v2 as tf
 
 def get_device():
     "Return a valid device, preferably a GPU"
