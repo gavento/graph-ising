@@ -53,10 +53,10 @@ class GraphSetIsing(ComponentsMixin, GraphSet):
         self.m_U_mean_spin.update_state(spins_out)
         return spins_out
 
-    def largest_clusters(self, spins, positive_spin=True, edge_mask=None, max_iters=16):
+    def largest_clusters(self, spins, positive_spin=True, edge_mask=None, max_iters=16, samples=tf.constant(1), drop_edges=tf.constant(0.0)):
         if positive_spin:
             node_mask = spins > 0.0
         else:
             node_mask = spins < 0.0
-        self.largest_components(node_mask=node_mask, edge_mask=edge_mask, max_iters=max_iters)
+        return self.mean_largest_components(node_mask=node_mask, edge_mask=edge_mask, max_iters=max_iters, samples=samples, drop_edges=drop_edges)
 

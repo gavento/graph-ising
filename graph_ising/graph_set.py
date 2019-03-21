@@ -3,7 +3,7 @@ import numpy as np
 import tensorflow.compat.v2 as tf
 
 from .base import Base
-
+from .utils import timed
 
 class GraphSet(Base):
 
@@ -33,11 +33,12 @@ class GraphSet(Base):
         if isinstance(graphs, nx.Graph):
             graphs = [graphs]
         assert len(graphs) > 0
-        self.graphs = [nx.DiGraph(g) for g in graphs]
+        assert all(isinstance(g, nx.Graph) for g in graphs)
+        self.graphs = graphs
 
         self.n = len(self.graphs)
         self.orders = np.array([g.order() for g in self.graphs], dtype=np.int64)
-        self.sizes = np.array([g.size() for g in self.graphs], dtype=np.int64)
+        self.sizes = np.array([g.size() if isinstance(g, nx.DiGraph) else g.size() * 2 for g in self.graphs], dtype=np.int64)
         # Joint graph size
         self.order = sum(self.orders)
         self.size = sum(self.sizes)
@@ -60,10 +61,16 @@ class GraphSet(Base):
             self.batch[bi:bi + self.orders[gi]] = gi
             # Create edges
             for vi in range(self.orders[gi]):
-                self.in_degrees[bi + vi] = g.in_degree(vi)
-                self.out_degrees[bi + vi] = g.out_degree(vi)
                 self.label[bi + vi] = vi
-                for wi in g.predecessors(vi):
+                if isinstance(g, nx.DiGraph):
+                    self.in_degrees[bi + vi] = g.in_degree(vi)
+                    self.out_degrees[bi + vi] = g.out_degree(vi)
+                    preds = g.predecessors(vi)
+                else:
+                    self.in_degrees[bi + vi] = g.degree(vi)
+                    self.out_degrees[bi + vi] = g.degree(vi)
+                    preds = g.neighbors(vi)
+                for wi in preds:
                     self.edges[0, ei] = wi + bi
                     self.edges[1, ei] = vi + bi
                     ei += 1

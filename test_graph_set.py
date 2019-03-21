@@ -11,8 +11,8 @@ from graph_ising.utils import timed
 
 
 def test_create():
-    N = 100
-    K = 100
+    N = 200
+    K = 200
     g = nx.random_graphs.powerlaw_cluster_graph(N, 3, 0.5)
     # test exact sizes
     with timed('GraphSet'):

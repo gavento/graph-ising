@@ -29,3 +29,22 @@ def test_update():
     def f(vec):
         gsi.update(vec)
     f(tf.constant([-1.0] * gsi.order))
+
+
+def test_spin_components():
+    g = nx.grid_2d_graph(4, 4)
+    g = nx.relabel.convert_node_labels_to_integers(g, ordering='sorted')
+    gs = GraphSetIsing(graphs=[g] * 4)
+    s0 = tf.reshape(tf.constant([
+        [0, 1, 0, 1,  1, 1, 0, 1,  0, 1, 0, 1,  0, 1, 1, 0],
+        [0, 1, 0, 1,  1, 0, 1, 1,  1, 1, 1, 0,  0, 0, 0, 1],
+        [0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0],
+        [1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1],
+        ], tf.float32) * 2 - 1, [-1])
+
+    assert (gs.largest_clusters(s0).numpy() == [6, 7, 0, 16]).all()
+    smpl = gs.largest_clusters(s0, drop_edges=tf.constant(0.2), samples=tf.constant(50))
+    assert (smpl.numpy() <= [6, 7, 0, 16]).all()
+    assert (smpl.numpy() >= [3.5, 4, 0, 14.5]).all()
+
+    gs.print_metrics()
