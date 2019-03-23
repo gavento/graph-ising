@@ -1,6 +1,6 @@
 try:
     import tensorflow.compat.v2 as tf
-except ImportError:
+except ModuleNotFoundError:
     raise Exception('Tensor API v2 required.')
 
 from .base import Base

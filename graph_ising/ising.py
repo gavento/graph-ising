@@ -75,3 +75,5 @@ class GraphSetIsing(ComponentsMixin, GraphSet):
             spins = self.update(spins, update_fraction=update_fraction)
         csizes = self.largest_clusters(spins, **kwargs)
         return (spins, csizes)
+
+
