@@ -1,12 +1,15 @@
 import networkx as nx
 import numpy as np
+import pytest
 import tensorflow.compat.v2 as tf
-#from tensorflow.python.ops import control_flow_util
 
 from graph_ising import GraphSet, GraphSetIsing
 from graph_ising.utils import timed
 
+#from tensorflow.python.ops import control_flow_util
 
+
+@pytest.mark.slow
 def test_bench():
     with tf.device("/device:CPU:0"):
         N = 1000

@@ -8,43 +8,67 @@ from .ising import GraphSetIsing
 @attr.s
 class PopSample:
     param = attr.ib(type=float)
-    interface = attr.ib(type=int)
+    interface = attr.ib(type='Interface')
     parent = attr.ib(type='PopSample', repr=False)
     time = attr.ib(type=float)
     data = attr.ib(type=np.ndarray, repr=False)
 
     sampled = attr.ib(0)
-    up_count = attr.ib(0)
     up_times = attr.ib(factory=list)
-    down_count = attr.ib(0)
     down_times = attr.ib(factory=list)
+    timeouts = attr.ib(factory=list)
+
+
+@attr.s
+class Interface:
+    param = attr.ib(type=float)
+    pops = attr.ib(factory=list, repr=False)
+
+    @property
+    def mean_up_time(self):
+        return np.mean(self.up_times)
+
+    @property
+    def mean_down_time(self):
+        return np.mean(self.down_times)
+
+    def sample_batch(self, batch_size):
+        """
+        Sample a batch of PopSample, returning `(pops, data_tensor)`.
+        """
+        assert len(self.pops) > 0
+        idxs = np.random.randint(0, len(self.pops), [batch_size])
+        pops = [self.pops[r] for r in idxs]
+        return (pops, np.concatenate([p.data for p in pops]))
 
 
 class DirectIsingClusterFFSampler:
 
-    def __init__(self, graph, interfaces, batch_size=100, pop_size=100, init_spins=-1.0, **kwargs):
+    def __init__(self, graph, interfaces, batch_size=100, pop_size=100, update_fraction=0.1, init_spins=-1.0, **kwargs):
         self.graph = graph
         self.ising = GraphSetIsing(graphs=[graph] * batch_size, **kwargs)
         self.pop_size = pop_size
         self.batch_size = batch_size
+        self.update_fraction = update_fraction
 
-        assert interfaces[0] == 0
-        self.interfaces = interfaces
-        self.pops = [[] for b in self.interfaces]
-        self.pops[0] = [PopSample(0.0, 0, None, 0.0, np.full([graph.order()], init_spins))]
+        self.interfaces = [i if isinstance(i, Interface) else Interface(i) for i in interfaces]
+        assert self.interfaces[0].param == 0.0
+        self.interfaces[0].pops.append(PopSample(0.0, 0, None, 0.0, np.full([graph.order()], init_spins)))
 
-    def sample_batch(self, interface_no):
-        """
-        Sample a batch of PopSample, returning `(pop_samples, concat_data)`.
-        """
-        isamples = self.pops[interface_no]
-        assert len(isamples) > 0
-        idxs = np.random.randint(0, len(isamples), [self.batch_size])
-        pops = [isamples[r] for r in idxs]
-        return (pops, np.concatenate([p.data for p in pops]))
+    def run_adaptive_batch(self, interface, default_steps=1000, cluster_times=20):
+        steps = default_steps
+        if interface.pops:
+            pass
 
-    def run_batch_from(self, interface_no, steps, update_fraction, clusters_every=100):
-        batch_pops, batch_data = self.sample_batch(interface_no)
+    def run_batch(self, interface, steps, clusters_every=100):
+        if isinstance(interface, int):
+            interface_no = interface
+            interface = self.interfaces[interface_no]
+        else:
+            assert isinstance(interface, Interface)
+            interface_no = self.interfaces.index(interface)
+
+        batch_pops, batch_data = interface.sample_batch(self.batch_size)
         step_data = tf.Variable(
             np.zeros((steps + 1,) + tuple(batch_data.shape), dtype=self.ising.ftype),
             trainable=False,
@@ -55,13 +79,13 @@ class DirectIsingClusterFFSampler:
             np.zeros((n_params, self.batch_size), dtype=self.ising.ftype),
             trainable=False,
             name='step_params')
-        up = self.interfaces[interface_no + 1] if interface_no + 1 < len(self.interfaces) else 1e100
-        down = self.interfaces[interface_no - 1] if interface_no > 0 else -1e100
+        up = self.interfaces[interface_no + 1].param if interface_no + 1 < len(self.interfaces) else 1e100
+        down = self.interfaces[interface_no - 1].param if interface_no > 0 else -1e100
         s = self._run_updates_fn(
             step_data,
             step_params,
             tf.identity(steps),
-            tf.identity(update_fraction),
+            tf.identity(self.update_fraction),
             clusters_every=tf.identity(clusters_every),
             up=up, down=down,
             stop_fraction=0.5)
@@ -71,19 +95,23 @@ class DirectIsingClusterFFSampler:
             pop = batch_pops[gi]
             pop.sampled += 1
             for pi in range(n_params):
-                t = (pi + 1) * clusters_every
+                s = (pi + 1) * clusters_every
+                t = s * self.update_fraction
                 n = self.graph.order()
-                spin = step_data[t, gi * n:(gi + 1) * n]
-                if step_params[gi, pi] >= up and interface_no + 1 < len(self.interfaces):
-                    npop = PopSample(step_params[gi, pi], interface_no + 1, parent=pop, time=t, data=spin)
-                    pop.up_count += 1
+                spin = step_data[s, gi * n:(gi + 1) * n]
+                if step_params[pi, gi] >= up and interface_no + 1 < len(self.interfaces):
+                    npop = PopSample(step_params[pi, gi], interface_no + 1, parent=pop, time=t, data=spin)
                     pop.up_times.append(t)
-                    self.pops[interface_no + 1].append(npop)
-                if step_params[gi, pi] <= down and interface_no > 0:
-                    npop = PopSample(step_params[gi, pi], interface_no - 1, parent=pop, time=t, data=spin)
-                    pop.down_count += 1
+                    self.interfaces[interface_no + 1].pops.append(npop)
+                    break
+                if step_params[pi, gi] <= down and interface_no > 0:
+                    npop = PopSample(step_params[pi, gi], interface_no - 1, parent=pop, time=t, data=spin)
                     pop.down_times.append(t)
-                    self.pops[interface_no - 1].append(npop)
+                    self.interfaces[interface_no - 1].pops.append(npop)
+                    break
+            else:
+                # No interface was hit
+                pop.timeouts.append(steps * self.update_fraction)
 
     def select_spins_in_times(self, step_data, graph_steps):
         """
