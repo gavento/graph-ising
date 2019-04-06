@@ -77,12 +77,26 @@ class Interface:
             return base_time
 
     def __repr__(self):
-        return "{}(param={}, {} pops, {} ups, {} downs)".format(self.__class__.__name__, self.param, len(self.pops), len(self.up_times()), len(self.down_times()))
+        uts = self.up_times()
+        dts = self.down_times()
+        mut = np.mean(uts) if len(uts) > 0 else 0.0
+        mdt = np.mean(dts) if len(dts) > 0 else 0.0
+        tot = len(uts) + len(dts)
+        frac = len(uts) / tot if tot > 0 else 0.0
+        return "{}(param={}, {} pops, {} ups (time {:.2g}), {} downs (time {:.2g})), {:.4f} up".format(
+            self.__class__.__name__, self.param, len(self.pops), len(uts), mut, len(dts), mdt, frac)
 
 
 class DirectIsingClusterFFSampler:
 
-    def __init__(self, graph, interfaces, batch_size=100, pop_size=100, update_fraction=0.1, init_spins=-1.0, **kwargs):
+    def __init__(self,
+                 graph,
+                 interfaces,
+                 batch_size=100,
+                 pop_size=100,
+                 update_fraction=0.1,
+                 init_spins=-1.0,
+                 **kwargs):
         self.graph = graph
         self.ising = GraphSetIsing(graphs=[graph] * batch_size, **kwargs)
         self.pop_size = pop_size
@@ -91,7 +105,8 @@ class DirectIsingClusterFFSampler:
 
         self.interfaces = [i if isinstance(i, Interface) else Interface(i) for i in interfaces]
         assert self.interfaces[0].param == 0.0
-        self.interfaces[0].pops.append(PopSample(0.0, 0, None, 0.0, np.full([graph.order()], init_spins)))
+        self.interfaces[0].pops.append(
+            PopSample(0.0, 0, None, 0.0, np.full([graph.order()], init_spins)))
 
     def run_adaptive_batch(self, interface, cluster_times=20):
         assert interface.pops
@@ -117,7 +132,8 @@ class DirectIsingClusterFFSampler:
         #    np.zeros((n_params, self.batch_size), dtype=self.ising.ftype),
         #    trainable=False,
         #    name='step_params')
-        up = self.interfaces[interface_no + 1].param if interface_no + 1 < len(self.interfaces) else 1e100
+        up = self.interfaces[interface_no +
+                             1].param if interface_no + 1 < len(self.interfaces) else 1e100
         down = self.interfaces[interface_no - 1].param if interface_no > 0 else -1e100
         step_data, step_params = self._run_updates_fn(
             batch_data,
@@ -127,7 +143,7 @@ class DirectIsingClusterFFSampler:
             tf.identity(self.update_fraction),
             clusters_every=tf.identity(clusters_every),
             #up=up, down=down
-            )
+        )
         step_params = step_params.numpy()
         step_data = step_data.numpy()
         for gi in range(self.ising.n):
@@ -139,12 +155,14 @@ class DirectIsingClusterFFSampler:
                 n = self.graph.order()
                 spin = step_data[pi, gi * n:(gi + 1) * n]
                 if step_params[pi, gi] >= up and interface_no + 1 < len(self.interfaces):
-                    npop = PopSample(step_params[pi, gi], interface_no + 1, parent=pop, time=t, data=spin)
+                    npop = PopSample(
+                        step_params[pi, gi], interface_no + 1, parent=pop, time=t, data=spin)
                     pop.up_times.append(t)
                     self.interfaces[interface_no + 1].pops.append(npop)
                     break
                 if step_params[pi, gi] <= down and interface_no > 0:
-                    npop = PopSample(step_params[pi, gi], interface_no - 1, parent=pop, time=t, data=spin)
+                    npop = PopSample(
+                        step_params[pi, gi], interface_no - 1, parent=pop, time=t, data=spin)
                     pop.down_times.append(t)
                     self.interfaces[interface_no - 1].pops.append(npop)
                     break
@@ -159,14 +177,15 @@ class DirectIsingClusterFFSampler:
         vertex_steps = tf.gather(graph_steps, self.ising.v_batch)
         return tf.gather(step_data, vertex_steps)
 
-    @tf.function(input_signature=([
-         #tf.TensorSpec(shape=[None, None], dtype=tf.float32),
-         #tf.TensorSpec(shape=[None, None], dtype=tf.float32),
-         tf.TensorSpec(shape=[None], dtype=tf.float32),
-         tf.TensorSpec(shape=[], dtype=tf.int32),
-         tf.TensorSpec(shape=[], dtype=tf.float32),
-         tf.TensorSpec(shape=[], dtype=tf.int32),
-         ]))
+    @tf.function(
+        input_signature=([
+            #tf.TensorSpec(shape=[None, None], dtype=tf.float32),
+            #tf.TensorSpec(shape=[None, None], dtype=tf.float32),
+            tf.TensorSpec(shape=[None], dtype=tf.float32),
+            tf.TensorSpec(shape=[], dtype=tf.int32),
+            tf.TensorSpec(shape=[], dtype=tf.float32),
+            tf.TensorSpec(shape=[], dtype=tf.int32),
+        ]))
     #@tf.function
     def _run_updates_fn(self, batch_data, steps, update_fraction, clusters_every):
         ds = tf.TensorArray(tf.float32, steps + 1, clear_after_read=False)
