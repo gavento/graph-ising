@@ -19,18 +19,25 @@ class PopSample:
     timeouts = attr.ib(factory=list)
 
 
-@attr.s
+@attr.s(repr=False)
 class Interface:
     param = attr.ib(type=float)
     pops = attr.ib(factory=list, repr=False)
 
-    @property
-    def mean_up_time(self):
-        return np.mean(self.up_times)
+    def up_times(self):
+        if not self.pops:
+            return np.zeros(0)
+        return np.concatenate([p.up_times for p in self.pops])
 
-    @property
-    def mean_down_time(self):
-        return np.mean(self.down_times)
+    def down_times(self):
+        if not self.pops:
+            return np.zeros(0)
+        return np.concatenate([p.down_times for p in self.pops])
+
+    def timeouts(self):
+        if not self.pops:
+            return np.zeros(0)
+        return np.concatenate([p.timeouts for p in self.pops])
 
     def sample_batch(self, batch_size):
         """
@@ -40,6 +47,37 @@ class Interface:
         idxs = np.random.randint(0, len(self.pops), [batch_size])
         pops = [self.pops[r] for r in idxs]
         return (pops, np.concatenate([p.data for p in pops]))
+
+    def sim_time(self, *, min_samples=3, base_time=10.0):
+        """
+        Return a time suitable for the next run.
+        
+        Max of:
+          2 * (90% percentile of down-times) if any and meaningful,
+          2 * (90% percentile of up-times) if any and meaningful,
+          2 * max time sampled if any of the above are meaningful but have <min_samples entries,
+          or base_time if none above apply.
+        """
+        vs = []
+        ups = self.up_times()
+        downs = self.down_times()
+        tos = self.timeouts()
+        allts = np.concatenate((ups, downs, tos))
+
+        if len(ups) > 0:
+            vs.append(2 * np.quantile(ups, 0.9))
+        if len(downs) > 0:
+            vs.append(2 * np.quantile(downs, 0.9))
+        if len(ups) < min_samples or len(downs) < min_samples:
+            if len(allts) > 0:
+                vs.append(2 * np.max(allts))
+        if vs:
+            return max(vs)
+        else:
+            return base_time
+
+    def __repr__(self):
+        return "{}(param={}, {} pops, {} ups, {} downs)".format(self.__class__.__name__, self.param, len(self.pops), len(self.up_times()), len(self.down_times()))
 
 
 class DirectIsingClusterFFSampler:
@@ -55,10 +93,10 @@ class DirectIsingClusterFFSampler:
         assert self.interfaces[0].param == 0.0
         self.interfaces[0].pops.append(PopSample(0.0, 0, None, 0.0, np.full([graph.order()], init_spins)))
 
-    def run_adaptive_batch(self, interface, default_steps=1000, cluster_times=20):
-        steps = default_steps
-        if interface.pops:
-            pass
+    def run_adaptive_batch(self, interface, cluster_times=20):
+        assert interface.pops
+        steps = max(int(interface.sim_time() / self.update_fraction), cluster_times)
+        self.run_batch(interface, steps, steps // cluster_times)
 
     def run_batch(self, interface, steps, clusters_every=100):
         if isinstance(interface, int):
@@ -69,26 +107,27 @@ class DirectIsingClusterFFSampler:
             interface_no = self.interfaces.index(interface)
 
         batch_pops, batch_data = interface.sample_batch(self.batch_size)
-        step_data = tf.Variable(
-            np.zeros((steps + 1,) + tuple(batch_data.shape), dtype=self.ising.ftype),
-            trainable=False,
-            name='step_data')
-        step_data[0].assign(batch_data)
+        #step_data = tf.Variable(
+        #    np.zeros((steps + 1,) + tuple(batch_data.shape), dtype=self.ising.ftype),
+        #    trainable=False,
+        #    name='step_data')
+        #step_data[0].assign(batch_data)
         n_params = steps // clusters_every
-        step_params = tf.Variable(
-            np.zeros((n_params, self.batch_size), dtype=self.ising.ftype),
-            trainable=False,
-            name='step_params')
+        #step_params = tf.Variable(
+        #    np.zeros((n_params, self.batch_size), dtype=self.ising.ftype),
+        #    trainable=False,
+        #    name='step_params')
         up = self.interfaces[interface_no + 1].param if interface_no + 1 < len(self.interfaces) else 1e100
         down = self.interfaces[interface_no - 1].param if interface_no > 0 else -1e100
-        s = self._run_updates_fn(
-            step_data,
-            step_params,
+        step_data, step_params = self._run_updates_fn(
+            batch_data,
+            #step_data,
+            #step_params,
             tf.identity(steps),
             tf.identity(self.update_fraction),
             clusters_every=tf.identity(clusters_every),
-            up=up, down=down,
-            stop_fraction=0.5)
+            #up=up, down=down
+            )
         step_params = step_params.numpy()
         step_data = step_data.numpy()
         for gi in range(self.ising.n):
@@ -98,7 +137,7 @@ class DirectIsingClusterFFSampler:
                 s = (pi + 1) * clusters_every
                 t = s * self.update_fraction
                 n = self.graph.order()
-                spin = step_data[s, gi * n:(gi + 1) * n]
+                spin = step_data[pi, gi * n:(gi + 1) * n]
                 if step_params[pi, gi] >= up and interface_no + 1 < len(self.interfaces):
                     npop = PopSample(step_params[pi, gi], interface_no + 1, parent=pop, time=t, data=spin)
                     pop.up_times.append(t)
@@ -120,28 +159,34 @@ class DirectIsingClusterFFSampler:
         vertex_steps = tf.gather(graph_steps, self.ising.v_batch)
         return tf.gather(step_data, vertex_steps)
 
-    # @tf.function(input_signature=([
-    #     tf.TensorSpec(shape=[None, None], dtype=tf.float32),
-    #     tf.TensorSpec(shape=[None, None], dtype=tf.float32),
-    #     tf.TensorSpec(shape=[], dtype=tf.int64),
-    #     tf.TensorSpec(shape=[], dtype=tf.float32),
-    #     tf.TensorSpec(shape=[], dtype=tf.int64),
-    #     tf.TensorSpec(shape=[], dtype=tf.float32),
-    #     tf.TensorSpec(shape=[], dtype=tf.float32),
-    #     ]))
-    @tf.function
-    def _run_updates_fn(self, step_data, step_params, steps, update_fraction, clusters_every, up,
-                        down, stop_fraction):
+    @tf.function(input_signature=([
+         #tf.TensorSpec(shape=[None, None], dtype=tf.float32),
+         #tf.TensorSpec(shape=[None, None], dtype=tf.float32),
+         tf.TensorSpec(shape=[None], dtype=tf.float32),
+         tf.TensorSpec(shape=[], dtype=tf.int32),
+         tf.TensorSpec(shape=[], dtype=tf.float32),
+         tf.TensorSpec(shape=[], dtype=tf.int32),
+         ]))
+    #@tf.function
+    def _run_updates_fn(self, batch_data, steps, update_fraction, clusters_every):
+        ds = tf.TensorArray(tf.float32, steps + 1, clear_after_read=False)
+        ps = tf.TensorArray(tf.float32, steps // clusters_every)
         for s in range(1, steps + 1):
-            d2 = self.ising.update(step_data[s - 1], update_fraction)
-            step_data[s].assign(d2)
-            if (s > 0) & tf.equal(s % clusters_every, 0):
+            #tf.print(s)
+            #tf.print(batch_data)
+            d2 = self.ising.update(batch_data, update_fraction)
+            if tf.equal(s % clusters_every, 0):
                 p2 = self.ising.largest_clusters(d2)
-                step_params[(s // clusters_every) - 1].assign(p2)
-                # TODO: Stop early if up/down params are hit for stop_fraction
-                done = tf.reduce_sum(tf.cast((p2 >= up) | (p2 <= down), tf.float32))
+                idx = (s // clusters_every) - 1
+                ds = ds.write(idx, d2)
+                ps = ps.write(idx, p2)
+                #tf.print(p2)
+                # NO-DO: Stop early if up/down params are hit for stop_fraction
+                #done = tf.reduce_sum(tf.cast((p2 >= up) | (p2 <= down), tf.float32))
                 #tf.print(done > (stop_fraction * tf.cast(self.ising.v_n, tf.float32)))
                 #if done > (stop_fraction * tf.cast(self.ising.v_n, tf.float32)):
                 #    pass
                 #    return s
-        #return steps
+            batch_data = d2
+        #tf.print(ds)
+        return ds.stack(), ps.stack()
