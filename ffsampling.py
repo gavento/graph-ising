@@ -12,7 +12,7 @@ tf.autograph.set_verbosity(0, alsologtostdout=True)
 def main():
     BS = 100  # Batch size
     N = 10  # Grid dim
-    RS = 100  # Requered samples
+    RS = 50  # Requered samples
     T = 1.3
     F = 0.0
     #g = nx.random_graphs.powerlaw_cluster_graph(N, 3, 0.5)
@@ -23,6 +23,8 @@ def main():
     ifs = list(range(0, N, 2)) + list(range(N, N * N - N, 5)) + list(range(N * N - N, N * N, 2))
     print(ifs)
     frs = []  # Fractions of up
+
+    tf.summary.trace_on(profiler=True)
 
     ff = DirectIsingClusterFFSampler(g, ifs, update_fraction=0.5, batch_size=BS, T=T, F=F)
     for i, itf in enumerate(ff.interfaces):
@@ -46,6 +48,10 @@ def main():
         print("  fraction up", fr)
         frs.append(fr)
 
+    sw = tf.summary.create_file_writer('ising-log')
+    with sw.as_default():
+        tf.summary.trace_export('ising', 1, profiler_outdir='ising-prof')
+
     plt.plot(ifs, frs)
     plt.ylim(0.0, 1.0)
     plt.ylabel('Fraction up')
@@ -55,5 +61,6 @@ def main():
     plt.title(title)
     plt.savefig(title.replace(" ", "_") + ".png", dpi=300)
     plt.show()
+
 
 main()
