@@ -7,8 +7,8 @@ clean:
 	rm -f *.pyc cising.so isingtest
 
 cising.so: cising.c
-	gcc -shared -o $@ -fpic $(CFLAGS) $<
+	gcc -shared -o $@ -fpic $(CFLAGS) $< -lm 
 
 isingtest: cising.c
-	gcc -o $@ $(CFLAGS) -lm -Dmain_test=main $<
+	gcc -o $@ $(CFLAGS) -Dmain_test=main $< -lm 
 
