@@ -38,6 +38,9 @@ class GraphSetIsing(ComponentsMixin, GraphSet):
     def initial_spins(self, value=-1.0):
         return np.full([self.order], value, self.ftype)
 
+    def E(self, spins):
+        pass
+
     def update(self, spins_in, update_fraction=tf.constant(1.0), update_metrics=True):
         "Returns a resulting spins_out tensor operation"
         sum_neighbors = self.sum_neighbors(spins_in, edge_weights=self.v_J)
@@ -56,7 +59,7 @@ class GraphSetIsing(ComponentsMixin, GraphSet):
         self.m_U_mean_spin.update_state(spins_out)
         return spins_out
 
-    def largest_clusters(self, spins, positive_spin=True, edge_mask=None, max_iters=16, samples=tf.constant(1), drop_edges=tf.constant(0.0)):
+    def largest_clusters(self, spins, positive_spin=True, edge_mask=None, max_iters=64, samples=tf.constant(1), drop_edges=tf.constant(0.0)):
         if positive_spin:
             node_mask = spins > 0.0
         else:
