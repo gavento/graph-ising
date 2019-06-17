@@ -110,6 +110,9 @@ class DirectIsingClusterFFSampler:
         self.update_fraction = update_fraction
         self.drop_edges = drop_edges
         self.drop_samples = drop_samples
+        self.ran_updates = 0
+        self.ran_updates_frac = 0.0
+        self.ran_clusters = 0
 
         self.interfaces = [i if isinstance(i, Interface) else Interface(i) for i in interfaces]
         assert self.interfaces[0].param == 0.0
@@ -153,6 +156,10 @@ class DirectIsingClusterFFSampler:
             clusters_every=tf.identity(clusters_every),
             #up=up, down=down
         )
+        self.ran_updates += steps * self.batch_size
+        self.ran_updates_frac += steps * self.update_fraction * self.batch_size
+        self.ran_clusters += n_params * self.batch_size
+
         step_params = step_params.numpy()
         step_data = step_data.numpy()
         for gi in range(self.ising.n):
