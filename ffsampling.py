@@ -1,35 +1,34 @@
-import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
-#tf.autograph.set_verbosity(0, alsologtostdout=True)
 import plotly
 import plotly.graph_objs as go
-import tensorflow.compat.v2 as tf
 
-from graph_ising.forward_flux import DirectIsingClusterFFSampler
-from graph_ising.utils import get_device, timed
+from graph_ising import utils
+from graph_ising.ff_sampler import DirectIsingClusterFFSampler
 
 
 def main():
-    BS = 100  # Batch size
-    N = 10    # Grid dim
-    RS = 20   # Requered samples
-    T = 1.1
-    F = 0.1
-    #g = nx.random_graphs.powerlaw_cluster_graph(N, 3, 0.5)
-    g = nx.grid_2d_graph(N, N)
+    parser = utils.default_parser()
+    parser.add_argument("--grid", default=10, type=int, help="Use square grid NxN.")
+    parser.add_argument("--require_samples", default=10, type=int, help="Samples required at interface.")
+    parser.add_argument("--Is", default=10, type=int, help="Interfaces to use.")
+    parser.add_argument("--Imin", default=0, type=float, help="Min. interface.")
+    parser.add_argument("--IMax", default=None, type=float, help="Max interface.")
+    parser.add_argument("-T", default=1.0, type=float, help="Temperature.")
+    parser.add_argument("-F", default=0.0, type=float, help="Field.")
+    args = utils.init_experiment(parser)
+    assert args.Imax is not None
+
+    g = nx.grid_2d_graph(args.grid, args.grid)
     g = nx.relabel.convert_node_labels_to_integers(g, ordering='sorted')
 
-    assert N % 5 == 0
-    ifs = list(range(0, N * N, 5))
-    print(ifs)
-    frs = []  # Fractions of up
+    Ifs = sorted(set(np.linspace(args.Imin, args.Imax, args.Is, dtype=int)))
+    print("Interfaces: {}".format(ifs))
 
-    #tf.summary.trace_on(profiler=True)
-    # p_drop = exp(-2J/(K_B * T)
-    J = 1.0
-    p_drop = np.exp(-2 * J / T)
-    p_drop = 0.0
+    # p_drop = exp(-2 J / (K_B * T))
+    drop_prob = np.exp(-2.0 / args.T)
+    drop_samples = 3
+
     ff = DirectIsingClusterFFSampler(g, ifs, update_fraction=0.1, batch_size=BS, T=T, F=F, drop_edges=p_drop, drop_samples=1)
     for i, itf in enumerate(ff.interfaces):
         while ((len(itf.up_times()) < RS and i < len(ff.interfaces) - 1)):# or

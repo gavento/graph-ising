@@ -91,7 +91,7 @@ class Interface:
             self.__class__.__name__, self.param, len(self.pops), len(uts), mut, len(dts), mdt, frac)
 
 
-class DirectIsingClusterFFSampler:
+class FFSampler:
 
     def __init__(self,
                  graph,
