@@ -1,8 +1,10 @@
-from cffi import FFI
-import numpy as np
-import networkx as nx
 import json
+import os
 import pickle
+
+import networkx as nx
+import numpy as np
+from cffi import FFI
 
 
 cising = None
@@ -51,7 +53,8 @@ index_t ising_max_cluster_multi(ising_state *s, uint32_t measure, spin_t value,
 
 """)
 
-    cising = ffi.dlopen('./_cising.so')
+    so_path = os.path.join(os.path.dirname(__file__), '_cising.so')
+    cising = ffi.dlopen(so_path)
 
 load_ffi()
 
@@ -86,13 +89,13 @@ class ClusterStats(object):
 
 class IsingState(object):
 
-    def __init__(self, n=None, graph=None, spins=None, seed=42, field=0.0, T=1.0):
+    def __init__(self, n=None, graph=None, spins=None, seed=42, F=0.0, T=1.0):
 
         if spins is None:
             if n != None:
-                self.spins = np.ones([n], dtype='int8')
+                self.spins = -np.ones([n], dtype='int8')
             elif graph != None:
-                self.spins = np.ones([graph.order()], dtype='int8')
+                self.spins = -np.ones([graph.order()], dtype='int8')
             else:
                 raise ValueError('Provide n, graph or spins')
         else:
@@ -102,7 +105,7 @@ class IsingState(object):
         if n != None:
             assert n == self.n
 
-        self.field = field
+        self.F = F
         self.T = T
         self.seed = seed
 
@@ -117,43 +120,37 @@ class IsingState(object):
         if graph:
             self.set_nx_graph(graph)
 
-
     def __repr__(self):
         return "<IsingState %d spins, seed %d>" % (self.n, self.seed)
-
 
     def __eq__(self, other):
         assert isinstance(other, IsingState)
         return (self.n == other.n and 
                 self.seed == other.seed and
                 self.T == other.T and
-                self.field == other.field and
+                self.F == other.F and
                 all(self.spins == other.spins) and
                 sorted(self.get_edge_list()) == sorted(other.get_edge_list()))
 
-
     def copy(self):
 
-        IS = IsingState(spins=self.spins, seed=self.seed, field=self.field, T=self.T)
+        IS = IsingState(spins=self.spins, seed=self.seed, F=self.F, T=self.T)
         IS.neigh_list = self.neigh_list.copy()
         IS.neigh_offset = self.neigh_offset.copy()
         IS.degree = self.degree.copy()
         IS.degree_sum = self.degree_sum.copy()
         return IS
 
-
     def save(self, fname):
 
         with open(fname, 'wb') as f:
             pickle.dump(self, f)
-
 
     @classmethod
     def load(cls, fname):
 
         with open(fname, 'rb') as f:
             return pickle.load(f)
-
 
     def get_edge_list(self):
         """
@@ -168,7 +165,6 @@ class IsingState(object):
                     el.append((u, v))
         return el
 
-
     def get_nx_graph(self):
         """
         Construct a NetworkX graph from the internal
@@ -177,7 +173,6 @@ class IsingState(object):
         G = nx.empty_graph(self.n, create_using=nx.MultiGraph())
         G.add_edges_from(self.get_edge_list(), )
         return G
-
 
     def set_edge_list(self, edge_list):
         """
@@ -203,13 +198,12 @@ class IsingState(object):
         for e in edge_list:
             u, v = tuple(e)
             self.neigh_list[offsets[u]] = v
-            offsets[u] += 1;
+            offsets[u] += 1
             self.neigh_list[offsets[v]] = u
-            offsets[v] += 1;
+            offsets[v] += 1
 
         assert all(offsets == self.degree_sum)
    
-
     def set_nx_graph(self, G):
         """
         Set the interbal list to a given graph.
@@ -217,7 +211,6 @@ class IsingState(object):
         """
         assert set(G.nodes()) == set(range(self.n))
         self.set_edge_list(G.edges())
-
             
     def _prepare_state(self):
 
@@ -228,7 +221,7 @@ class IsingState(object):
         assert self.degree_sum.dtype == 'int32'
         state = ffi.new("ising_state *", {
             "n": self.n,
-            "field": self.field,
+            "field": self.F,
             "T": self.T,
             "seed": self.seed,
             "spins": ffi.cast("int8_t *", self.spins.ctypes.data),
@@ -238,7 +231,6 @@ class IsingState(object):
             "degree_sum": ffi.cast("int32_t *", self.degree_sum.ctypes.data),
             })
         return state
-
 
     def mc_sweep(self, sweeps=1, updates=0):
         """
@@ -276,7 +268,7 @@ class IsingState(object):
 
 
 
-    def mc_max_cluster(self, measures=1, value=-1, edge_prob=1.0):
+    def mc_max_cluster(self, samples=1, value=1, edge_prob=1.0):
         """
         Measure maximal cluster statistics `measure` times (only considering spins with `value`)
         and return the averaged `ClusterStats`.
@@ -286,49 +278,20 @@ class IsingState(object):
         """
 
         assert self.neigh_list is not None
-        measures = int(measures)
-        assert measures >= 1
+        samples = int(samples)
+        assert samples >= 1
 
         state = self._prepare_state()
         sum_max_stats = ffi.new("ising_cluster_stats *")
-        r = cising.ising_max_cluster_multi(state, measures, value, edge_prob, sum_max_stats)
+        r = cising.ising_max_cluster_multi(state, samples, value, edge_prob, sum_max_stats)
         self.seed = state.seed
 
         assert r == sum_max_stats.v_in
-        return ClusterStats(sum_max_stats, divide=float(measures))
+        return ClusterStats(sum_max_stats, divide=float(samples))
 
-
-def test():
-
-    n = 1000
-    g = nx.random_graphs.powerlaw_cluster_graph(n, 10, 0.1, 42)
-    print(g.size(), g.order())
-
-    s = IsingState(graph=g, field=1.5, T=8.0)
-
-    s1 = s.copy()
-    s1.mc_random_update(10000)
-    r1 = s1.mc_max_cluster(measures=3, edge_prob=0.9)
-
-    s2 = s.copy()
-    s2.mc_random_update(10000)
-    r2 = s2.mc_max_cluster(measures=3, edge_prob=0.9)
-
-    assert s1 == s2
-    assert s1 != s
-    assert r1 == r2
-
-    s3 = s.copy()
-    s3.mc_sweep(50)
-    s3.mc_sweep(50)
-    r3 = s3.mc_max_cluster(measures=1, edge_prob=1.0)
-    
-    s4 = s.copy()
-    s4.mc_sweep(100)
-    r4 = s4.mc_max_cluster(measures=1, edge_prob=1.0)
-
-    assert s3 == s4
-    assert s3 != s
-    assert r3 == r4
-
+    def get_hamiltonian(self):
+        H = -self.F * np.sum(self.spins)
+        for u, v in self.get_edge_list():
+            H -= self.spins[u] * self.spins[v]
+        return H
 

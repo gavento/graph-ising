@@ -26,7 +26,9 @@ def init_experiment(parser):
         (('-' + args.comment) if args.comment else ''))
     args.fbase = os.path.join(args.logdir, args.full_name)
     os.makedirs(args.logdir, exist_ok=True)
-    args.logfile = open(args.fbase + '.log', 'wt')
+    log_f = args.fbase + '.log'
+    sys.stderr.write("Logfile: {}\n".format(log_f))
+    args.logfile = open(log_f, 'wt')
     args.logfile.write("Cmd:\n  {}\nArgs:\n{}\n".format(
         ' '.join(sys.argv),
         '\n'.join("  {:19s} {}".format(k, v) for k, v in args.__dict__.items() if k[0] != '_')))
@@ -34,9 +36,12 @@ def init_experiment(parser):
 
 
 @contextlib.contextmanager
-def timed(name=None, iters=None):
+def timed(name=None, iters=None, log=sys.stderr):
     t0 = time.perf_counter()
     yield
     t1 = time.perf_counter()
+    msg = (name + " " if name else "") + "took {:.3f} s".format((t1 - t0))
     if iters is not None:
-    print((name + " " if name else "") + "took {:.3f} ms".format((t1 - t0)))
+        msg += " ({} iters, {:.3f} its / s)".format(iters, iters / (t1 - t0))
+    log.write(msg + "\n")
+
