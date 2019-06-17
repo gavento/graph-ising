@@ -12,6 +12,7 @@ class PopSample:
     parent = attr.ib(type='PopSample', repr=False)
     time = attr.ib(type=float)
     data = attr.ib(type=np.ndarray, repr=False)
+    E = attr.ib(0.0, type=float)
 
     sampled = attr.ib(0)
     up_times = attr.ib(factory=list)
@@ -28,6 +29,9 @@ class Interface:
         if not self.pops:
             return np.zeros(0)
         return np.concatenate([p.up_times for p in self.pops])
+
+    def energies(self):
+        return np.array([p.E for p in self.pops])
 
     def down_times(self):
         if not self.pops:
@@ -96,12 +100,16 @@ class DirectIsingClusterFFSampler:
                  pop_size=100,
                  update_fraction=0.1,
                  init_spins=-1.0,
+                 drop_edges=0.0,
+                 drop_samples=1,
                  **kwargs):
         self.graph = graph
         self.ising = GraphSetIsing(graphs=[graph] * batch_size, **kwargs)
         self.pop_size = pop_size
         self.batch_size = batch_size
         self.update_fraction = update_fraction
+        self.drop_edges = drop_edges
+        self.drop_samples = drop_samples
 
         self.interfaces = [i if isinstance(i, Interface) else Interface(i) for i in interfaces]
         assert self.interfaces[0].param == 0.0
@@ -195,7 +203,7 @@ class DirectIsingClusterFFSampler:
             #tf.print(batch_data)
             d2 = self.ising.update(batch_data, update_fraction)
             if tf.equal(s % clusters_every, 0):
-                p2 = self.ising.largest_clusters(d2)
+                p2 = self.ising.largest_clusters(d2, samples=tf.constant(self.drop_samples), drop_edges=tf.constant(self.drop_edges, tf.float32))
                 idx = (s // clusters_every) - 1
                 ds = ds.write(idx, d2)
                 ps = ps.write(idx, p2)
