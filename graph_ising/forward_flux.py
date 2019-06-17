@@ -156,9 +156,9 @@ class DirectIsingClusterFFSampler:
             clusters_every=tf.identity(clusters_every),
             #up=up, down=down
         )
-        self.ran_updates += steps * self.batch_size
-        self.ran_updates_frac += steps * self.update_fraction * self.batch_size
-        self.ran_clusters += n_params * self.batch_size
+        self.ran_updates += steps * self.ising.order
+        self.ran_updates_frac += steps * self.update_fraction * self.ising.order
+        self.ran_clusters += n_params * self.ising.order
 
         step_params = step_params.numpy()
         step_data = step_data.numpy()

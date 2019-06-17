@@ -12,7 +12,7 @@ from graph_ising.utils import get_device, timed
 
 def main():
     BS = 100  # Batch size
-    N = 15    # Grid dim
+    N = 10    # Grid dim
     RS = 20   # Requered samples
     T = 1.1
     F = 0.1
