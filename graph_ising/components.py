@@ -24,7 +24,7 @@ class ComponentsMixin(GraphSet):
         """
 
         max_iters = tf.identity(max_iters)
-        initial_comp_nums = tf.range(1, self.order + 1, dtype=tf.int64)
+        initial_comp_nums = tf.range(1, self.order + 1, dtype=self.itype)
         if node_mask is not None:
             node_mask = tf.cast(node_mask, self.itype)
             initial_comp_nums = initial_comp_nums * node_mask
@@ -40,7 +40,7 @@ class ComponentsMixin(GraphSet):
         run.assign(True)
 
         while run:
-            neigh_nums = self.max_neighbors(comp_nums, edge_weights=edge_mask)
+            neigh_nums = tf.cast(self.max_neighbors(tf.cast(comp_nums, tf.int32), edge_weights=edge_mask), self.itype)
             mask_neigh_nums = neigh_nums if node_mask is None else neigh_nums * node_mask
             new_comp_nums = tf.maximum(comp_nums, mask_neigh_nums)
             iters.assign_add(1)
@@ -64,7 +64,7 @@ class ComponentsMixin(GraphSet):
         K = tf.cast(self.v_order + 1, tf.int32)
         comp_sizes = tf.math.bincount(tf.cast(comp_nums, dtype=tf.int32), minlength=K, maxlength=K)
         comp_sizes = comp_sizes[1:]  # drop the 0-th component
-        return tf.math.segment_max(comp_sizes, self.v_batch)
+        return tf.math.unsorted_segment_max(comp_sizes, self.v_batch, self.v_n)
 
     def mean_largest_components(self, node_mask=None, edge_mask=None, drop_edges=0.5, samples=10, max_iters=16):
         """
@@ -79,7 +79,7 @@ class ComponentsMixin(GraphSet):
         mean_max_sizes.assign(tf.zeros([self.n], dtype=self.ftype))
 
         for i in range(samples):
-            em = tf.random.uniform([self.v_size]) >= drop_edges
+            em = tf.random.uniform([tf.cast(self.v_size, tf.int32)], dtype=self.ftype) >= drop_edges
             if edge_mask is not None:
                 em = em & edge_mask
             largest = self.largest_components(node_mask=node_mask, edge_mask=em, max_iters=max_iters)

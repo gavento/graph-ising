@@ -102,11 +102,20 @@ class GraphSet(Base):
 
     def sum_neighbors(self, node_data, edge_weights=None):
         "Aggregate sum over (in-) neighbors."
+        node_data = tf.identity(node_data)
+        edge_data = tf.gather(node_data, self.v_edges[0])
+        if edge_weights is not None:
+            edge_data = tf.cast(edge_weights, node_data.dtype) * edge_data
+        return tf.math.unsorted_segment_sum(edge_data, self.v_edges[1], self.v_order)
         return self._generic_neighbors_op(tf.math.segment_sum, node_data, edge_weights=edge_weights)
 
     def max_neighbors(self, node_data, edge_weights=None):
         "Aggregate max over (in-) neighbors."
-        return self._generic_neighbors_op(tf.math.segment_max, node_data, edge_weights=edge_weights)
+        node_data = tf.identity(node_data)
+        edge_data = tf.gather(node_data, self.v_edges[0])
+        if edge_weights is not None:
+            edge_data = tf.cast(edge_weights, node_data.dtype) * edge_data
+        return tf.math.unsorted_segment_max(edge_data, self.v_edges[1], self.v_order)
 
     def mean_neighbors(self, node_data, edge_weights=None):
         "Aggregate mean over (in-) neighbors."

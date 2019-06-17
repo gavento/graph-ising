@@ -48,7 +48,7 @@ class Interface:
         pops = [self.pops[r] for r in idxs]
         return (pops, np.concatenate([p.data for p in pops]))
 
-    def sim_time(self, *, min_samples=3, base_time=10.0):
+    def sim_time(self, *, min_samples=3, base_time=1.0):
         """
         Return a time suitable for the next run.
         
@@ -110,7 +110,8 @@ class DirectIsingClusterFFSampler:
 
     def run_adaptive_batch(self, interface, cluster_times=20):
         assert interface.pops
-        steps = max(int(interface.sim_time() / self.update_fraction), cluster_times)
+        steps = max(int(interface.sim_time() / self.update_fraction), 1)
+        cluster_times = min(cluster_times, steps)
         self.run_batch(interface, steps, steps // cluster_times)
 
     def run_batch(self, interface, steps, clusters_every=100):
@@ -153,7 +154,7 @@ class DirectIsingClusterFFSampler:
                 s = (pi + 1) * clusters_every
                 t = s * self.update_fraction
                 n = self.graph.order()
-                spin = step_data[pi, gi * n:(gi + 1) * n]
+                spin = step_data[pi, gi * n:(gi + 1) * n].copy() # Prevents memory leaks
                 if step_params[pi, gi] >= up and interface_no + 1 < len(self.interfaces):
                     npop = PopSample(
                         step_params[pi, gi], interface_no + 1, parent=pop, time=t, data=spin)
