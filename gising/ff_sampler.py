@@ -1,10 +1,10 @@
 import time
-
+import tqdm
 import attr
 import numpy as np
 import tensorflow.compat.v2 as tf
 
-from .cising import IsingState
+from .cising import IsingState, ClusterStats
 
 
 @attr.s
@@ -14,6 +14,7 @@ class PopSample:
     parent = attr.ib(type='PopSample', repr=False)
     time = attr.ib(type=float)
     state = attr.ib(type=IsingState, repr=False)
+    cluster_stats = attr.ib(type=ClusterStats, repr=False)
 
     sampled = attr.ib(0)
     up_times = attr.ib(factory=list)
@@ -24,6 +25,7 @@ class PopSample:
 @attr.s(repr=False)
 class Interface:
     param = attr.ib(type=float)
+    number = attr.ib(type=int)
     pops = attr.ib(factory=list, repr=False)
 
     def up_times(self):
@@ -57,7 +59,8 @@ class Interface:
         tot = len(uts) + len(dts)
         frac = len(uts) / tot if tot > 0 else 0.0
         return "{}(param={}, {} pops, {} ups (time {:.2g}), {} downs (time {:.2g})), {} TOs, {:.4f} up".format(
-            self.__class__.__name__, self.param, len(self.pops), len(uts), mut, len(dts), mdt, len(tos), frac)
+            self.__class__.__name__, self.param, len(self.pops), len(uts), mut, len(dts), mdt,
+            len(tos), frac)
 
 
 class FFSampler:
@@ -71,19 +74,50 @@ class FFSampler:
         self.ran_updates = 0.0
         self.ran_clusters = 0
 
-        self.interfaces = [i if isinstance(i, Interface) else Interface(i) for i in interfaces]
+        self.interfaces = [
+            iface if isinstance(iface, Interface) else Interface(iface, i)
+            for i, iface in enumerate(interfaces)
+        ]
+        self.start_pop = None
+        self.ifaceA = self.interfaces[0]
+        self.ifaceB = self.interfaces[-1]
 
-    def fill_interfaces(self):
-        for ino, iface in enumerate(self.interfaces[:-1]):
-            next_iface = self.interfaces[ino + 1]
-            its = 0
-            t0 = time.perf_counter()
-            while len(next_iface.pops) < self.min_pop_size:
-                its += 1
-                self.trace_from_iface_dyn(ino)
-            t1 = time.perf_counter()
-            print("{} iters from iface {} finished in {} s:\n  iface {:3d}: {}\n  iface {:3d}: {}".
-                  format(its, ino, t1 - t0, ino, iface, ino + 1, next_iface))
+    def fill_interfaces(self, progress=False, timeout=100.0, tgt_samples=10, speriod_prior=0.1):
+        speriod = speriod_prior
+        min_samples = tgt_samples / 2
+        for ino, iface in enumerate(self.interfaces):
+            bot = self.ifaceA if ino > 0 else None
+            Us, Ds, TOs, TUNs, As = [], [], [], [], []
+            if progress:
+                pb = tqdm.tqdm(range(self.min_pop_size),
+                               f"Gen interface {ino} [{iface.param:6.2f}]")
+            while len(iface.pops) < self.min_pop_size:
+                if ino == 0:
+                    pop = self.start_pop
+                else:
+                    pop = self.interfaces[ino - 1].get_random_pop()
+
+                res, time, samples, npop = self.trace_from_iface_dyn(
+                    pop, bot, iface, timeout=timeout, speriod=speriod, min_samples=min_samples)
+
+                if samples >= min_samples:
+                    [TOs, Us, Ds][res].append(time)
+                else:
+                    TUNs.append(time)
+                As.append(time)
+                speriod = max(np.quantile(As, 0.2) / tgt_samples, 0.02) 
+                if progress:
+                    pb.update(len(iface.pops) - pb.n)
+                    pb.set_postfix_str(
+                        f"{len(Us)} U, {len(Ds)} D, {len(TOs)} TO, {len(TUNs)} TUN, {speriod:.3g} swp/sample"
+                    )
+                    pb.display()
+            if progress:
+                pb.close()
+            print(f"  genrated {ino} / {len(self.interfaces)}" +
+                  f", Param mean {np.mean([p.param for p in iface.pops]):.3g} tgt {iface.param:.3g}" + 
+                  (f", UpTime: mean {np.mean(Us):.3g}, min {np.min(Us):.3g}" if Us else "") +
+                  (f", DownTime: mean {np.mean(Ds):.3g}, min {np.min(Ds):.3g}" if Ds else "")) 
 
 
 class CIsingFFSampler(FFSampler):
@@ -92,48 +126,51 @@ class CIsingFFSampler(FFSampler):
         super().__init__(graph, interfaces, **kwargs)
         if state is None:
             state = IsingState(graph=graph)
-        self.interfaces[0].pops.append(PopSample(self.interfaces[0].param, 0, None, 0.0, state))
+        self.start_pop = PopSample(0.0, -1, None, 0.0, state, None)
 
-    def trace_from_iface_dyn(self, ino, max_time=100.0):
+    def trace_from_iface_dyn(self,
+                             pop,
+                             iface_low,
+                             iface_high,
+                             timeout=100.0,
+                             speriod=0.01,
+                             min_samples=5):
+        """
+        Returns a pair of (res, time), res being 1 (up), -1 (down), 0 (timeout).
+        """
 
-        iface = self.interfaces[ino]
-        up_iface = self.interfaces[ino + 1]
-        down_iface = self.interfaces[max(ino - 1, 0)]
-        up_param = up_iface.param
-        down_param = down_iface.param  # special case for ino == 0
-
-        cluster_every = 0.02 # TODO dynamic autotune
-
-        pop = iface.get_random_pop()
         pop.sampled += 1
         state = pop.state.copy()
-        state.seed += np.random.randint(1<<32)
+        state.seed += np.random.randint(1 << 32)  # TODO: deterministic. Modify state?
         t = 0.0  # Time
+        samples = 0
 
         while True:
-            updates = max(1, int(cluster_every * state.n))
+            updates = max(1, int(speriod * state.n))
             dt = updates / state.n
             state.mc_sweep(sweeps=0, updates=updates)
             t += dt
             self.ran_updates += dt
 
-            cstats = state.mc_max_cluster(samples=self.cluster_samples, edge_prob=self.cluster_e_prob)
+            cstats = state.mc_max_cluster(samples=self.cluster_samples,
+                                          edge_prob=self.cluster_e_prob)
             param = cstats.v_in
-            self.ran_clusters += 1
+            self.ran_clusters += self.cluster_samples
+            samples += 1
 
-            if param >= up_param:
-                pop.up_times.append(t)
-                npop = PopSample(param, ino + 1, pop, t, state)
-                up_iface.pops.append(npop)
-                break
+            if param >= iface_high.param:
+                npop = PopSample(param, iface_high.number, pop, t, state, cstats)
+                if samples >= min_samples:
+                    pop.up_times.append(t)
+                    iface_high.pops.append(npop)
+                return (1, t, samples, npop)
 
-            if param <= down_param and ino > 0:
-                pop.down_times.append(t)
-                npop = PopSample(param, ino - 1, pop, t, state)
-                down_iface.pops.append(npop)
-                break
+            if iface_low and param < iface_low.param:
+                if samples >= min_samples:
+                    pop.down_times.append(t)
+                return (-1, t, samples, None)
 
-            if t > max_time:
-                pop.timeouts.append(t)
-                print("TO", t)
-                break
+            if t > timeout:
+                if samples >= min_samples:
+                    pop.timeouts.append(t)
+                return (0, t, samples, None)

@@ -47,7 +47,7 @@ def main():
                          min_pop_size=args.require_samples,
                          cluster_e_prob=cluster_e_prob,
                          cluster_samples=args.cluster_samples)
-    ff.fill_interfaces()
+    ff.fill_interfaces(progress=True)
 
     frs = []
     for i, itf in enumerate(ff.interfaces):
