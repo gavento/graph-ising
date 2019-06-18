@@ -37,6 +37,9 @@ def main():
 
     # p_drop = exp(-2 J / (K_B * T))
     cluster_e_prob = 1.0 - np.exp(-2.0 / args.T)
+    if args.cluster_samples == 1:
+        cluster_e_prob = 1.0
+
     state0 = IsingState(graph=g, T=args.T, F=args.F)
     ff = CIsingFFSampler(g,
                          Ifs,
@@ -80,6 +83,10 @@ def main():
                                             value=1,
                                             edge_prob=cluster_e_prob)
                 ces.append(cs.relative_E)
+
+            print("Max Cluster", cs)
+            ls = [''.join(".X"[v] for v in r) for r in cs.mask.reshape([args.grid, args.grid])]
+            print('\n'.join(ls))
 
             Xs.append(iface.param)
             apstat(Es, Es_std, es)

@@ -133,12 +133,15 @@ inline index_t ising_mc_update(ising_state *s, index_t index)
         sum += s->spins[u];
     }
 
-    double deltaE = (1 + 2 * s->spins[index]) * (s->field - sum);
+    double deltaE = -2.0 * s->spins[index] * (s->field + sum);
+//    double deltaE = (1 + 2 * s->spins[index]) * (s->field - sum); <--- BUG: WHY ?!?
     if (deltaE > 0) {
         s->spins[index] = - s->spins[index];
         flipped = 1;
     } else {
         double p = get_rand_01(&s->seed);
+        assert(p < 1.0);
+        assert(p >= 0.0);
         if (p < exp(deltaE / s->T)) {
             s->spins[index] = - s->spins[index];
             flipped = 1;
@@ -241,7 +244,7 @@ index_t ising_max_cluster_visit(ising_state *s, index_t v, index_t mark, index_t
 
         index_t u = s->neigh_list[s->neigh_offset[v] + i];
 
-        if (!get_rand_edge_presence(v, u, edge_prob, s->seed)) {
+        if ((edge_prob < 1.0) && (!get_rand_edge_presence(v, u, edge_prob, s->seed))) {
             continue; // Edge considered non-existent (is that right?)
         }
 
@@ -298,34 +301,45 @@ index_t ising_max_cluster_visit(ising_state *s, index_t v, index_t mark, index_t
  *
  * Warning: May overflow the stack during recursion.
  */
-index_t ising_max_cluster_once(ising_state *s, spin_t value, double edge_prob, ising_cluster_stats *max_stats)
+index_t ising_max_cluster_once(ising_state *s, spin_t value, double edge_prob, ising_cluster_stats *max_stats, uint8_t *out_mask)
 {
     index_t *visited = memset(alloca(sizeof(index_t[s->n])), 0, sizeof(index_t[s->n]));
     ising_cluster_stats cur_stats;
     if (max_stats)
         memset(max_stats, 0, sizeof(ising_cluster_stats));
-    index_t max_size = 0, size;
+    index_t max_size = 0, size, max_mark = 1;
 
     for (index_t v = 0; v < s->n; v++) {
 
         if ((visited[v] == 0) && (s->spins[v] == value)) {
 
+            index_t mark = v + 1;
             if (max_stats) {
                 memset(&cur_stats, 0, sizeof(cur_stats));
-                size = ising_max_cluster_visit(s, v, v + 1, visited, edge_prob, &cur_stats);
-#define MSTAT(attr) max_stats->attr = MAX(max_stats->attr, cur_stats.attr)
-                MSTAT(v_in); MSTAT(e_in); MSTAT(e_border); MSTAT(v_out_border); MSTAT(v_in_border);
-#undef MSTAT
+                size = ising_max_cluster_visit(s, v, mark, visited, edge_prob, &cur_stats);
             } else {
-                size = ising_max_cluster_visit(s, v, v + 1, visited, edge_prob, NULL);
+                size = ising_max_cluster_visit(s, v, mark, visited, edge_prob, NULL);
             }
-            max_size = MAX(size, max_size);
-
+            if (size > max_size) {
+                max_mark = mark;
+                max_size = size;
+                if (max_stats)
+                    memcpy(max_stats, &cur_stats, sizeof(cur_stats));
+            }
         }
     }
 
     if (max_stats) {
         assert(max_size == max_stats->v_in);
+    }
+    if (out_mask) {
+        for (index_t v = 0; v < s->n; v++) {
+            if ((visited[v] == max_mark) && (s->spins[v] == value)) {
+                out_mask[v] = 1;
+            } else {
+                out_mask[v] = 0;
+            }
+        }
     }
 
     return max_size;
@@ -340,9 +354,12 @@ index_t ising_max_cluster_once(ising_state *s, spin_t value, double edge_prob, i
  *
  * Returns max. cluster size (resp. their sum if measure > 1) after the sweeps.
  * When max_stats != NULL, store cluster maximums (resp. their sums) there.
+ * 
+ * If non-NULL, out_mask must be uint8_t[N] and will contain 1s on the largest cluster
+ * from the last run.
  */
 index_t ising_max_cluster_multi(ising_state *s, uint32_t measure, spin_t value,
-                          double edge_prob, ising_cluster_stats *max_stats)
+                          double edge_prob, ising_cluster_stats *max_stats, uint8_t *out_mask)
 {
     index_t sum = 0;
     ising_cluster_stats temp_max_stats;
@@ -352,12 +369,12 @@ index_t ising_max_cluster_multi(ising_state *s, uint32_t measure, spin_t value,
 
         if (max_stats) {
             memset(&temp_max_stats, 0, sizeof(ising_cluster_stats));
-            sum += ising_max_cluster_once(s, value, edge_prob, &temp_max_stats);
+            sum += ising_max_cluster_once(s, value, edge_prob, &temp_max_stats, out_mask);
 #define MSUM(attr) max_stats->attr += temp_max_stats.attr
             MSUM(v_in); MSUM(e_in); MSUM(e_border); MSUM(v_out_border); MSUM(v_in_border);
 #undef MSUM
         } else {
-            sum += ising_max_cluster_once(s, value, edge_prob, NULL);
+            sum += ising_max_cluster_once(s, value, edge_prob, NULL, out_mask);
         }
         get_rand(&s->seed); // Advance 'temporary' rand seed (restored below)
     }
@@ -398,9 +415,9 @@ int main_test()
 
     ising_cluster_stats stats;
 
-    for (int i = 0; i < 1000; i++) {
+    for (int i = 0; i < 100; i++) {
         index_t flips = ising_mc_sweep(&s, 1);
-        index_t csize = ising_max_cluster_once(&s, -1, 1.0, &stats);
+        index_t csize = ising_max_cluster_once(&s, -1, 1.0, &stats, NULL);
         assert(csize == stats.v_in);
         printf("Sweep: %d   flips: %d   stats: v_in=%d v_out_border=%d v_in_border=%d e_in=%d, e_border=%d\n",
                i, flips, stats.v_in, stats.v_out_border, stats.v_in_border, stats.e_in, stats.e_border);

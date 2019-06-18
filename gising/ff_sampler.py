@@ -14,7 +14,6 @@ class PopSample:
     parent = attr.ib(type='PopSample', repr=False)
     time = attr.ib(type=float)
     state = attr.ib(type=IsingState, repr=False)
-    #spins = attr.ib(type=np.ndarray, repr=False)
 
     sampled = attr.ib(0)
     up_times = attr.ib(factory=list)

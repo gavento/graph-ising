@@ -51,7 +51,8 @@ index_t ising_mc_sweep(ising_state *s, index_t sweeps);
 index_t ising_mc_sweep_partial(ising_state *s, index_t updates);
 
 index_t ising_max_cluster_multi(ising_state *s, uint32_t measure, spin_t value,
-                                double edge_prob, ising_cluster_stats *max_stats);
+                                double edge_prob, ising_cluster_stats *max_stats,
+                                uint8_t *out_mask);
 
 """)
 
@@ -63,19 +64,20 @@ load_ffi()
 
 class ClusterStats(object):
 
-    def __init__(self, ising_cluster_stats, value, divide=1.0, F=0.0, J=1.0):
+    def __init__(self, ising_cluster_stats, value, divide=1.0, F=0.0, cluster_mask=None):
         self.v_in = ising_cluster_stats.v_in / divide
         self.v_in_border = ising_cluster_stats.v_in_border / divide
         self.v_out_border = ising_cluster_stats.v_out_border / divide
         self.e_in = ising_cluster_stats.e_in / divide
         self.e_border = ising_cluster_stats.e_border / divide
         self.value = value
-        self.relative_E = - 2 * F * self.v_in * value * F + J * 2 * self.e_border
+        self.relative_E = -2.0 * F * self.v_in * value + 2.0 * self.e_border
+        self.mask = cluster_mask
 
     def __repr__(self):
 
-        return "<Stats: v_in=%s, v_in_border=%s, v_out_border=%s, e_in=%s, e_border=%s E=%f>" % (
-                self.v_in, self.v_in_border, self.v_out_border, self.e_in, self.e_border)
+        return "<Stats: v_in=%s, v_in_border=%s, v_out_border=%s, e_in=%s, e_border=%s rel_E=%f>" % (
+                self.v_in, self.v_in_border, self.v_out_border, self.e_in, self.e_border, self.relative_E)
 
     def __eq__(self, other):
 
@@ -109,7 +111,6 @@ class IsingState(object):
 
         self.F = F
         self.T = T
-        self.J = 1.0
         self.seed = seed
 
         assert self.spins.dtype.name == 'int8'
@@ -286,15 +287,18 @@ class IsingState(object):
 
         state = self._prepare_state()
         sum_max_stats = ffi.new("ising_cluster_stats *")
-        r = cising.ising_max_cluster_multi(state, samples, value, edge_prob, sum_max_stats)
+        out_mask = np.zeros(self.n, dtype='uint8')
+        assert out_mask.dtype == 'uint8'
+        out_mask_p = ffi.cast("uint8_t *", out_mask.ctypes.data)
+        r = cising.ising_max_cluster_multi(state, samples, value, edge_prob, sum_max_stats, out_mask_p)
         self.seed = state.seed
 
         assert r == sum_max_stats.v_in
-        return ClusterStats(sum_max_stats, value, F=self.F, J=self.J, divide=float(samples))
+        return ClusterStats(sum_max_stats, value, F=self.F, cluster_mask=out_mask, divide=float(samples))
 
     def get_hamiltonian(self):
         state = self._prepare_state()
-        return cising.ising_hamiltonian(state, self.F, self.J);
+        return cising.ising_hamiltonian(state, self.F, 1.0)
 
         H = -self.F * np.sum(self.spins)
         for u, v in self.get_edge_list():
