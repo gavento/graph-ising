@@ -63,11 +63,12 @@ class Interface:
 
 class FFSampler:
 
-    def __init__(self, graph, interfaces, min_pop_size=10):
+    def __init__(self, graph, interfaces, min_pop_size=10, cluster_samples=1, cluster_e_prob=1.0):
         self.graph = graph
         self.min_pop_size = min_pop_size
-        #        self.drop_edges = drop_edges
-        #        self.drop_samples = drop_samples
+        self.cluster_samples = cluster_samples
+        self.cluster_e_prob = cluster_e_prob
+
         self.ran_updates = 0.0
         self.ran_clusters = 0
 
@@ -102,7 +103,7 @@ class CIsingFFSampler(FFSampler):
         up_param = up_iface.param
         down_param = down_iface.param  # special case for ino == 0
 
-        cluster_every = 0.05
+        cluster_every = 0.02 # TODO dynamic autotune
 
         pop = iface.get_random_pop()
         pop.sampled += 1
@@ -110,33 +111,27 @@ class CIsingFFSampler(FFSampler):
         state.seed += np.random.randint(1<<32)
         t = 0.0  # Time
 
-#        print(ino, up_param)
-#        print(state.spins.reshape([10, 10]))
         while True:
             updates = max(1, int(cluster_every * state.n))
             dt = updates / state.n
             state.mc_sweep(sweeps=0, updates=updates)
-#            print("post", state.spins)
             t += dt
             self.ran_updates += dt
 
-            cstats = state.mc_max_cluster()
+            cstats = state.mc_max_cluster(samples=self.cluster_samples, edge_prob=self.cluster_e_prob)
             param = cstats.v_in
-#            print("HIT", ino, param, dt, updates)
             self.ran_clusters += 1
 
             if param >= up_param:
                 pop.up_times.append(t)
                 npop = PopSample(param, ino + 1, pop, t, state)
                 up_iface.pops.append(npop)
-#                print("UP", t)
                 break
 
             if param <= down_param and ino > 0:
                 pop.down_times.append(t)
                 npop = PopSample(param, ino - 1, pop, t, state)
                 down_iface.pops.append(npop)
-#                print("DW", t)
                 break
 
             if t > max_time:

@@ -101,6 +101,26 @@ typedef struct {
 
 
 /*
+ * Compute the Hamiltonian of the state.
+ */
+double ising_hamiltonian(ising_state *s, double F, double J)
+{
+    float H = 0.0;
+    for (index_t v = 0; v < s->n; v++) {
+        spin_t spin = s->spins[v];
+        H -= spin * F;
+        for (index_t i = 0; i < s->degree[v]; i++) {
+            index_t u = s->neigh_list[s->neigh_offset[v] + i];
+            if (u > v) {
+                H -= J * spin * s->spins[u];
+            }
+        }
+    }
+    return H;
+}
+
+
+/*
  * Update a single spin with MC rule, updating the state seed.
  */
 inline index_t ising_mc_update(ising_state *s, index_t index)
