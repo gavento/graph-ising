@@ -12,7 +12,8 @@ from gising.cising import IsingState, report_stats
 
 def main():
     parser = utils.default_parser()
-    parser.add_argument("--grid", default=None, type=int, help="Use square toroidal grid NxN.")
+    parser.add_argument("--grid", default=None, type=int, help="Use 2D toroidal grid NxN.")
+    parser.add_argument("--grid3d", default=None, type=int, help="Use 3D toroidal grid NxNxN.")
     parser.add_argument("--pref",
                         default=None,
                         type=str,
@@ -40,6 +41,10 @@ def main():
     if args.grid is not None:
         gname = f"2D toroid grid {args.grid}x{args.grid}"
         g = nx.grid_2d_graph(args.grid, args.grid, periodic=True)
+        g = nx.relabel.convert_node_labels_to_integers(g, ordering='sorted')
+    elif args.grid3d is not None:
+        gname = f"3D toroid grid {args.grid3d}x{args.grid3d}x{args.grid3d}"
+        g = nx.generators.lattice.grid_graph([args.grid3d]*3, periodic=True)  
         g = nx.relabel.convert_node_labels_to_integers(g, ordering='sorted')
     elif args.pref is not None:
         gname = f"Bar.-Alb. pref. att. graph {args.pref}"
