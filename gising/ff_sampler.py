@@ -94,7 +94,6 @@ class FFSampler:
         self.ifaceB = self.interfaces[-1]
 
     def fill_interfaces(self, progress=False, timeout=100.0, tgt_samples=10, time_est=0.1):
-        min_samples = tgt_samples / 2
         # Sample interface A
         up_up_times, npops = self.sample_up_crosses(self.start_pop,
                                                     self.ifaceA.param,
@@ -115,16 +114,14 @@ class FFSampler:
                                dynamic_ncols=True,
                                leave=True)
             while len(iface.pops) < self.min_pop_size:
-                time_est = prev.get_time_estimate(base_estimate=time_est)
+                #time_est = prev.get_time_estimate(base_estimate=time_est)
                 pop = prev.get_random_pop()
-                speriod = min(max(time_est / tgt_samples, 0.01), 0.1)
+                speriod = 0.01 # min(max(time_est / tgt_samples, 0.01), 0.1)
                 self.trace_pop(pop,
                                bot,
                                iface,
                                timeout=timeout,
-                               speriod=speriod,
-                               min_samples=min_samples,
-                               max_over_param=0.5)
+                               speriod=speriod)
                 if progress:
                     pb.update(len(iface.pops) - pb.n)
                     pb.set_postfix_str(
@@ -204,13 +201,11 @@ class CIsingFFSampler(FFSampler):
         state = pop.state.copy()
         state.seed = np.random.randint(1 << 60)  # TODO: Make reproducible? Modify state?
         t0 = state.time  # Time
-        samples = 0  # Clusterings done
 
         while True:
             state, cstats = self.run_sweep_up(state, iface_high.param, sweeps=speriod)
             elapsed = state.time - t0
             param = cstats.v_in
-            samples += 1
 
             if param >= iface_high.param:
                 npop = PopSample(param, pop, elapsed, state, cstats)
@@ -238,6 +233,7 @@ class CIsingFFSampler(FFSampler):
         """
         up_to_up_times = []
         npops = []
+        timeouts = 0
 
         state = pop0.state.copy()
         state.seed = np.random.randint(1 << 60)  # TODO: Make reproducible? Modify state?
@@ -246,7 +242,7 @@ class CIsingFFSampler(FFSampler):
         t_up = None
 
         if progress:
-            r = tqdm.tqdm(range(samples),
+            pb = tqdm.tqdm(range(samples),
                           f"Computing up-cross rate at {threshold:.3g}",
                           dynamic_ncols=True,
                           leave=True)
@@ -261,6 +257,9 @@ class CIsingFFSampler(FFSampler):
                 t0 = state.time
                 up = pop0.param >= threshold
                 t_up = None
+                timeouts += 1
+                if progress:
+                    pb.set_postfix_str(f"{timeouts} TO, times {stat_str(up_to_up_times, True)}")
 
             if param >= threshold:
                 if not up:
@@ -269,16 +268,16 @@ class CIsingFFSampler(FFSampler):
                         npops.append(PopSample(param, pop0, state.time - t_up, state.copy(),
                                                cstats))
                         if progress:
-                            r.update(1)
+                            pb.update(1)
                     t_up = state.time
                     if progress:
-                        r.set_postfix_str(f"up-up sweeps {stat_str(up_to_up_times, True)}")
-                        r.display()
+                        pb.set_postfix_str(f"{timeouts} TO, times {stat_str(up_to_up_times, True)}")
+                        pb.display()
                     up = True
             else:
                 up = False
 
             if len(npops) >= samples:
                 if progress:
-                    r.close()
+                    pb.close()
                 return (up_to_up_times, npops)

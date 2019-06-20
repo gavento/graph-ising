@@ -120,7 +120,6 @@ class IsingState(object):
         self.F = F
         self.T = T
         self.seed = seed
-        self.time = 0.0
         self.updates = 0
         self.clusterings = 0
         self.time = 0.0  # in sweeps

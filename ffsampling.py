@@ -28,7 +28,7 @@ def main():
     parser.add_argument("--Imax", default=None, type=float, help="Max interface.")
     parser.add_argument("-T", default=1.0, type=float, help="Temperature.")
     parser.add_argument("-F", default=0.0, type=float, help="Field.")
-    parser.add_argument("--timeout", default=1000.0, type=float, help="One sim timeout.")
+    parser.add_argument("--timeout", default=100.0, type=float, help="One sim timeout.")
     parser.add_argument("--cluster_samples",
                         "-C",
                         default=None,
