@@ -86,9 +86,6 @@ class FFSampler:
         self.cluster_samples = cluster_samples
         self.cluster_e_prob = cluster_e_prob
 
-        self.ran_updates = 0.0
-        self.ran_clusters = 0
-
         self.interfaces = [
             iface if isinstance(iface, Interface) else Interface(iface) for iface in interfaces
         ]
@@ -120,7 +117,7 @@ class FFSampler:
             while len(iface.pops) < self.min_pop_size:
                 time_est = prev.get_time_estimate(base_estimate=time_est)
                 pop = prev.get_random_pop()
-                speriod = min(max(time_est / tgt_samples, 0.01), 0.5)
+                speriod = min(max(time_est / tgt_samples, 0.01), 0.1)
                 self.trace_pop(pop,
                                bot,
                                iface,

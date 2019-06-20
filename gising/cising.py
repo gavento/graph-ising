@@ -21,6 +21,11 @@ typedef uint64_t rand_t;
 typedef int32_t index_t;
 typedef int8_t spin_t;
 
+uint64_t update_ns;
+uint64_t update_count;
+uint64_t cluster_ns;
+uint64_t cluster_count;
+
 typedef struct {
     index_t v_in;           // Vertices inside the cluster
     index_t v_out_border;   // Vertices adjacent to the cluster
@@ -61,6 +66,11 @@ index_t ising_max_cluster_multi(ising_state *s, uint32_t measure, spin_t value,
 
 
 load_ffi()
+
+
+def report_stats():
+    return f"""Updated {cising.update_count} nodes in {cising.update_ns * 1e-9:.3f}s ({cising.update_count / cising.update_ns * 1e9} n/s)
+Clustered {cising.cluster_count} nodes in {cising.cluster_ns * 1e-9:.3f}s ({cising.cluster_count / cising.cluster_ns * 1e9} n/s)"""
 
 
 class ClusterStats(object):
@@ -308,7 +318,7 @@ class IsingState(object):
         r = cising.ising_max_cluster_multi(state, samples, value, edge_prob, sum_max_stats,
                                            out_mask_p)
         if seed is not None:
-            assert state.seed == seed # should not be changed by connectivity sampling
+            assert state.seed == seed  # should not be changed by connectivity sampling
             state.seed = saved_seed
         self.clusterings += samples
 

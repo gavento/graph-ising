@@ -1,3 +1,4 @@
+#define _POSIX_C_SOURCE 199309L
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdint.h>
@@ -5,6 +6,9 @@
 #include <math.h>
 #include <assert.h>
 #include <alloca.h>
+#include <time.h>
+#include <sys/time.h>
+#include <sys/resource.h> 
 
 #define MIN(a,b) ((a)<(b)?(a):(b))
 #define MAX(a,b) ((a)>(b)?(a):(b))
@@ -12,6 +16,22 @@
 typedef uint64_t rand_t;
 typedef int32_t index_t;
 typedef int8_t spin_t;
+
+uint64_t update_ns = 0;
+uint64_t update_count = 0;
+uint64_t cluster_ns = 0;
+uint64_t cluster_count = 0;
+
+#define START_TIMER() \
+    struct timespec _timer_start; \
+    clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &_timer_start);
+
+#define STOP_TIMER(prefix, count) \
+    struct timespec _timer_stop; \
+    clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &_timer_stop); \
+    prefix##_count += count; \
+    uint64_t _timer_secs = _timer_stop.tv_sec - _timer_start.tv_sec; \
+    prefix##_ns += _timer_secs * 1000000000 + (_timer_stop.tv_nsec - _timer_start.tv_nsec);
 
 
 /*
@@ -158,6 +178,7 @@ inline index_t ising_mc_update(ising_state *s, index_t index)
  */
 index_t ising_mc_update_random(ising_state *s, index_t updates)
 {
+    START_TIMER();
     index_t flipped = 0;
 
     for (index_t i = 0; i < updates; i++) {
@@ -165,6 +186,7 @@ index_t ising_mc_update_random(ising_state *s, index_t updates)
         flipped += ising_mc_update(s, spin);
     }
 
+    STOP_TIMER(update, updates);
     return flipped;
 }
 
@@ -172,6 +194,8 @@ index_t ising_mc_update_random(ising_state *s, index_t updates)
 /*
  * Update all the spins using a random permutation 'sweeps' times, updating the state seed.
  * Returns the number of flipped spins.
+ * 
+ * Note: When used directly does not update update_ns global stats.
  */
 index_t ising_mc_sweep(ising_state *s, index_t sweeps)
 {
@@ -198,6 +222,7 @@ index_t ising_mc_sweep(ising_state *s, index_t sweeps)
 index_t ising_mc_sweep_partial(ising_state *s, index_t updates)
 {
     index_t flipped = 0;
+    START_TIMER();
 
     if (updates >= s->n) {
         flipped += ising_mc_sweep(s, updates / s->n);
@@ -212,6 +237,7 @@ index_t ising_mc_sweep_partial(ising_state *s, index_t updates)
         }
     }
 
+    STOP_TIMER(update, updates);
     return flipped;
 }
 
@@ -303,6 +329,7 @@ index_t ising_max_cluster_visit(ising_state *s, index_t v, index_t mark, index_t
  */
 index_t ising_max_cluster_once(ising_state *s, spin_t value, double edge_prob, ising_cluster_stats *max_stats, uint8_t *out_mask)
 {
+    START_TIMER();
     index_t *visited = memset(alloca(sizeof(index_t[s->n])), 0, sizeof(index_t[s->n]));
     ising_cluster_stats cur_stats;
     if (max_stats)
@@ -343,6 +370,7 @@ index_t ising_max_cluster_once(ising_state *s, spin_t value, double edge_prob, i
         }
     }
 
+    STOP_TIMER(cluster, s->n);
     assert(saved_seed == s->seed);
     return max_size;
 }

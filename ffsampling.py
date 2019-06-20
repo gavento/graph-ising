@@ -7,7 +7,7 @@ import plotly.graph_objs as go
 
 from gising import utils
 from gising.ff_sampler import CIsingFFSampler
-from gising.cising import IsingState
+from gising.cising import IsingState, report_stats
 
 
 def main():
@@ -54,7 +54,7 @@ def main():
                          cluster_samples=cluster_samples)
 
     ff.fill_interfaces(progress=True, timeout=args.timeout)
-    print("FF ran: {} full sweep updates, {} clusterings".format(ff.ran_updates, ff.ran_clusters))
+    print(f"FF cising stats:\n{report_stats()}")
 
     Xs = []
     Es, Es_std = [], []
