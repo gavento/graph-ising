@@ -1,22 +1,13 @@
+import sys
 import time
-import tqdm
+
 import attr
 import numpy as np
 import tensorflow.compat.v2 as tf
-import types
-from .cising import IsingState, ClusterStats
+import tqdm
 
-
-def stat_str(xs, minmax=False, prec=3):
-    if isinstance(xs, types.GeneratorType):
-        xs = np.array(xs)
-    if len(xs) == 0:
-        return "[0x]"
-    s = f"[{len(xs)}x {np.mean(xs):.{prec}g}±{np.std(xs):.{prec}g}]"
-    if minmax:
-        s = s[:-1] + f", {np.min(xs):.{prec}g} .. {np.max(xs):.{prec}g}]"
-    return s
-
+from .cising import ClusterStats, IsingState
+from .utils import stat_str
 
 @attr.s
 class PopSample:
@@ -123,7 +114,9 @@ class FFSampler:
             prev = self.interfaces[ino - 1]
             if progress:
                 pb = tqdm.tqdm(range(self.min_pop_size),
-                               f"Gen interface {ino} [{iface.param:6.2f}]", dynamic_ncols=True)
+                               f"Gen interface {ino} [{iface.param:6.2f}]",
+                               dynamic_ncols=True,
+                               leave=True)
             while len(iface.pops) < self.min_pop_size:
                 time_est = prev.get_time_estimate(base_estimate=time_est)
                 pop = prev.get_random_pop()
@@ -144,10 +137,11 @@ class FFSampler:
             if progress:
                 pb.display()
                 pb.close()
-            print(
-                f"\n  genrated {ino} / {len(self.interfaces)}" +
+                del pb
+            sys.stderr.write(
+                f"  done {ino} / {len(self.interfaces)}" +
                 f", Param {stat_str([p.param for p in iface.pops], True)} tgt {iface.param:.3g}" +
-                (f", UpTime {stat_str(prev.up_times(), True)}, DownTime {stat_str(prev.down_times(), True)}"
+                (f", UpTime {stat_str(prev.up_times(), True)}, DownTime {stat_str(prev.down_times(), True)}\n"
                 ))
 
 
@@ -159,100 +153,127 @@ class CIsingFFSampler(FFSampler):
             state = IsingState(graph=graph)
         self.start_pop = PopSample(0.0, None, 0.0, state, None)
 
+    def run_sweep_up(self, state, up, sweeps=0.1, up_accuracy=0.1):
+        """
+        Runs sim for `sweeps` and  
+        Assumes that state param is strictly below `down`.
+    
+        Returns (final_state, cluster_stats).
+        """
+        s0 = state.copy()
+        updates = max(1, int(sweeps * state.n))
+        state.mc_sweep(sweeps=0, updates=updates)
+        cstats = state.mc_max_cluster(samples=self.cluster_samples, edge_prob=self.cluster_e_prob)
+        param = cstats.v_in
+        if param <= up + up_accuracy:
+            # Success
+            return (state, cstats)
+
+        # Param above up + up_accuracy -> do bisection
+        sweeps_hi = sweeps
+        sweeps_lo = 0.0
+        runs = 0
+        while True:
+            state = s0.copy()
+            sweeps_mid = (sweeps_hi + sweeps_lo) / 2.0
+            updates = max(int(sweeps_mid * state.n), 1)
+
+            state.mc_sweep(sweeps=0, updates=updates)
+            cstats = state.mc_max_cluster(samples=self.cluster_samples,
+                                          edge_prob=self.cluster_e_prob)
+            if (param >= up and param <= up + up_accuracy) or (updates == 1):
+                # Success or minimal step
+                return (state, cstats)
+            if param < up:
+                sweeps_lo = sweeps_mid
+            if param > up + up_accuracy:
+                sweeps_hi = sweeps_mid
+
+            runs += 1
+            assert runs < 250  # Bisection halving should never get here
+
     def trace_pop(self,
                   pop,
                   iface_low,
                   iface_high,
                   timeout=100.0,
-                  speriod=0.01,
+                  speriod=0.1,
                   min_samples=5,
                   max_over_param=0.5):
         """
         Returns None.
         """
-
         pop.sampled += 1
         state = pop.state.copy()
         state.seed = np.random.randint(1 << 60)  # TODO: Make reproducible? Modify state?
-        t = 0.0  # Time
+        t0 = state.time  # Time
         samples = 0  # Clusterings done
 
         while True:
-            updates = max(1, int(speriod * state.n))
-            dt = updates / state.n
-            state.mc_sweep(sweeps=0, updates=updates)
-            t += dt
-            self.ran_updates += dt
-
-            cstats = state.mc_max_cluster(samples=self.cluster_samples,
-                                          edge_prob=self.cluster_e_prob)
+            state, cstats = self.run_sweep_up(state, iface_high.param, sweeps=speriod)
+            elapsed = state.time - t0
             param = cstats.v_in
-            self.ran_clusters += self.cluster_samples
             samples += 1
 
             if param >= iface_high.param:
-                npop = PopSample(param, pop, t, state, cstats)
-                pop.up_times.append(t)
-                if samples >= min_samples and param < iface_high.param + max_over_param:
-                    iface_high.pops.append(npop)
+                npop = PopSample(param, pop, elapsed, state, cstats)
+                pop.up_times.append(elapsed)
+                iface_high.pops.append(npop)
                 return
 
             if iface_low and param < iface_low.param:
-                pop.down_times.append(t)
+                pop.down_times.append(elapsed)
                 return
 
-            if t > timeout:
-                pop.timeouts.append(t)
+            if elapsed > timeout:
+                pop.timeouts.append(elapsed)
                 return
 
     def sample_up_crosses(self,
                           pop0,
                           threshold,
-                          target,
+                          samples,
                           timeout=100.0,
                           speriod=0.01,
                           progress=False):
         """
         Returns (up_to_up_times, pops)
         """
-        updates = max(1, int(speriod * pop0.state.n))
-        dt = updates / pop0.state.n
         up_to_up_times = []
         npops = []
 
         state = pop0.state.copy()
         state.seed = np.random.randint(1 << 60)  # TODO: Make reproducible? Modify state?
-        t = 0.0
+        t0 = state.time
         up = pop0.param >= threshold
         t_up = None
+
         if progress:
-            r = tqdm.tqdm(range(target), f"Computing up-cross rate at {threshold:.3g}", dynamic_ncols=True)
+            r = tqdm.tqdm(range(samples),
+                          f"Computing up-cross rate at {threshold:.3g}",
+                          dynamic_ncols=True,
+                          leave=True)
         while True:
-            state.mc_sweep(sweeps=0, updates=updates)
-            t += dt
-            self.ran_updates += dt
-            cstats = state.mc_max_cluster(samples=self.cluster_samples,
-                                          edge_prob=self.cluster_e_prob)
-            self.ran_clusters += self.cluster_samples
+            state, cstats = self.run_sweep_up(state, threshold, sweeps=speriod)
             param = cstats.v_in
 
-            if (t - (t_up or 0.0) > timeout):  # TODO: periodic resets to re-seed?
+            if (state.time - (t_up or t0) > timeout):  # TODO: periodic resets to re-seed?
                 # Reset to pop0
-                t = 0.0
-                up = pop0.param >= threshold
-                t_up = None
                 state = pop0.state.copy()
                 state.seed = np.random.randint(1 << 60)  # TODO: Make reproducible? Modify state?
+                t0 = state.time
+                up = pop0.param >= threshold
+                t_up = None
 
             if param >= threshold:
                 if not up:
                     if t_up is not None:
-                        up_to_up_times.append(t - t_up)
-                        if param < threshold + 0.5:
-                            npops.append(PopSample(param, pop0, t, state.copy(), cstats))
-                            if progress:
-                                r.update(1)
-                    t_up = t
+                        up_to_up_times.append(state.time - t_up)
+                        npops.append(PopSample(param, pop0, state.time - t_up, state.copy(),
+                                               cstats))
+                        if progress:
+                            r.update(1)
+                    t_up = state.time
                     if progress:
                         r.set_postfix_str(f"up-up sweeps {stat_str(up_to_up_times, True)}")
                         r.display()
@@ -260,5 +281,7 @@ class CIsingFFSampler(FFSampler):
             else:
                 up = False
 
-            if len(npops) >= target:
+            if len(npops) >= samples:
+                if progress:
+                    r.close()
                 return (up_to_up_times, npops)

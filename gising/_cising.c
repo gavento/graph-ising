@@ -308,6 +308,7 @@ index_t ising_max_cluster_once(ising_state *s, spin_t value, double edge_prob, i
     if (max_stats)
         memset(max_stats, 0, sizeof(ising_cluster_stats));
     index_t max_size = 0, size, max_mark = 1;
+    rand_t saved_seed = s->seed;
 
     for (index_t v = 0; v < s->n; v++) {
 
@@ -342,6 +343,7 @@ index_t ising_max_cluster_once(ising_state *s, spin_t value, double edge_prob, i
         }
     }
 
+    assert(saved_seed == s->seed);
     return max_size;
 }
 
