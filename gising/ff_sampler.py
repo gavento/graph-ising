@@ -155,9 +155,6 @@ class CIsingFFSampler(FFSampler):
         Returns (final_state, cluster_stats).
         """
         state = s0.copy()
-        cstats0 = state.mc_max_cluster(samples=self.cluster_samples, edge_prob=self.cluster_e_prob)
-        assert cstats0.v_in < up
-
         updates = max(1, int(sweeps * state.n))
         state.mc_sweep(sweeps=0, updates=updates)
         cstats = state.mc_max_cluster(samples=self.cluster_samples, edge_prob=self.cluster_e_prob)
