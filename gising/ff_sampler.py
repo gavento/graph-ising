@@ -59,7 +59,7 @@ class Interface:
         assert len(self.pops) > 0
         return self.pops[np.random.randint(0, len(self.pops))]
 
-    def get_time_estimate(self, quantile=0.2, base_estimate=0.1):
+    def get_time_estimate(self, quantile=0.1, base_estimate=0.1):
         Ts = []
         for p in self.pops:
             Ts.extend(p.up_times)
@@ -127,7 +127,7 @@ class FFSampler:
             while len(iface.pops) < self.min_pop_size:
                 time_est = prev.get_time_estimate(base_estimate=time_est)
                 pop = prev.get_random_pop()
-                speriod = time_est / tgt_samples
+                speriod = min(max(time_est / tgt_samples, 0.01), 0.5)
                 self.trace_pop(pop,
                                bot,
                                iface,
