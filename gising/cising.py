@@ -254,7 +254,7 @@ class IsingState(object):
             })
         return state
 
-    def mc_sweep(self, sweeps=1, updates=0):
+    def mc_sweep(self, sweeps=0, updates=0):
         """
         Run `sweeps` full sweeps over the spins, each in random permutation order,
         and then `update` spin updates using a part of a permutation, updating the

@@ -82,7 +82,7 @@ class FFSampler:
     def __init__(self, graph, interfaces, min_pop_size=10, cluster_samples=1, cluster_e_prob=1.0):
         self.graph = graph
         self.min_pop_size = min_pop_size
-        self.cross_A_samples = 10 * min_pop_size
+        self.cross_A_samples = 2 * min_pop_size
         self.cluster_samples = cluster_samples
         self.cluster_e_prob = cluster_e_prob
 
@@ -116,7 +116,7 @@ class FFSampler:
             while len(iface.pops) < self.min_pop_size:
                 #time_est = prev.get_time_estimate(base_estimate=time_est)
                 pop = prev.get_random_pop()
-                speriod = 0.01 # min(max(time_est / tgt_samples, 0.01), 0.1)
+                speriod = 0.05 # min(max(time_est / tgt_samples, 0.01), 0.1)
                 self.trace_pop(pop,
                                bot,
                                iface,
@@ -150,11 +150,14 @@ class CIsingFFSampler(FFSampler):
     def run_sweep_up(self, s0, up, sweeps=0.1, up_accuracy=0.1):
         """
         Runs sim for `sweeps` and  
-        Assumes that state param is strictly below `down`.
+        Assumes that state param is strictly below `up`.
     
         Returns (final_state, cluster_stats).
         """
         state = s0.copy()
+        cstats0 = state.mc_max_cluster(samples=self.cluster_samples, edge_prob=self.cluster_e_prob)
+        assert cstats0.v_in < up
+
         updates = max(1, int(sweeps * state.n))
         state.mc_sweep(sweeps=0, updates=updates)
         cstats = state.mc_max_cluster(samples=self.cluster_samples, edge_prob=self.cluster_e_prob)
@@ -164,24 +167,26 @@ class CIsingFFSampler(FFSampler):
             return (state, cstats)
 
         # Param above up + up_accuracy -> do bisection
-        sweeps_hi = sweeps
-        sweeps_lo = 0.0
+        updates_hi = updates
+        updates_lo = 0
         runs = 0
         while True:
             state = s0.copy()
-            sweeps_mid = (sweeps_hi + sweeps_lo) / 2.0
-            updates = max(int(sweeps_mid * state.n), 1)
+            updates = (updates_hi + updates_lo + 1) // 2
 
             state.mc_sweep(sweeps=0, updates=updates)
             cstats = state.mc_max_cluster(samples=self.cluster_samples,
                                           edge_prob=self.cluster_e_prob)
-            if (param >= up and param <= up + up_accuracy) or (updates == 1):
+            param = cstats.v_in
+#            print(updates_lo, updates, updates_hi, up, param)
+
+            if (param >= up and param <= up + up_accuracy) or (updates == updates_hi):
                 # Success or minimal step
                 return (state, cstats)
             if param < up:
-                sweeps_lo = sweeps_mid
+                updates_lo = updates
             if param > up + up_accuracy:
-                sweeps_hi = sweeps_mid
+                updates_hi = updates
 
             runs += 1
             assert runs < 250  # Bisection halving should never get here
@@ -226,7 +231,7 @@ class CIsingFFSampler(FFSampler):
                           threshold,
                           samples,
                           timeout=100.0,
-                          speriod=0.01,
+                          speriod=0.05,
                           progress=False):
         """
         Returns (up_to_up_times, pops)
@@ -247,8 +252,9 @@ class CIsingFFSampler(FFSampler):
                           dynamic_ncols=True,
                           leave=True)
         while True:
-            state, cstats = self.run_sweep_up(state, threshold, sweeps=speriod)
+            state, cstats = self.run_sweep_up(state, np.inf if up else threshold , sweeps=speriod)
             param = cstats.v_in
+            #print(up, t0, t_up, param, state.time)
 
             if (state.time - (t_up or t0) > timeout):  # TODO: periodic resets to re-seed?
                 # Reset to pop0
@@ -258,10 +264,12 @@ class CIsingFFSampler(FFSampler):
                 up = pop0.param >= threshold
                 t_up = None
                 timeouts += 1
+                up_to_up_times.append(timeout)
+#                print("Timeout")
                 if progress:
                     pb.set_postfix_str(f"{timeouts} TO, times {stat_str(up_to_up_times, True)}")
 
-            if param >= threshold:
+            elif param >= threshold:
                 if not up:
                     if t_up is not None:
                         up_to_up_times.append(state.time - t_up)
@@ -274,7 +282,7 @@ class CIsingFFSampler(FFSampler):
                         pb.set_postfix_str(f"{timeouts} TO, times {stat_str(up_to_up_times, True)}")
                         pb.display()
                     up = True
-            else:
+            else: # param < threshold
                 up = False
 
             if len(npops) >= samples:
