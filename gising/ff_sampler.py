@@ -145,7 +145,7 @@ class FFSampler:
                 pb.display()
                 pb.close()
             print(
-                f"  genrated {ino} / {len(self.interfaces)}" +
+                f"\n  genrated {ino} / {len(self.interfaces)}" +
                 f", Param {stat_str([p.param for p in iface.pops], True)} tgt {iface.param:.3g}" +
                 (f", UpTime {stat_str(prev.up_times(), True)}, DownTime {stat_str(prev.down_times(), True)}"
                 ))
