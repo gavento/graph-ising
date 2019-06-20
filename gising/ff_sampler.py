@@ -123,7 +123,7 @@ class FFSampler:
             prev = self.interfaces[ino - 1]
             if progress:
                 pb = tqdm.tqdm(range(self.min_pop_size),
-                               f"Gen interface {ino} [{iface.param:6.2f}]")
+                               f"Gen interface {ino} [{iface.param:6.2f}]", dynamic_ncols=True)
             while len(iface.pops) < self.min_pop_size:
                 time_est = prev.get_time_estimate(base_estimate=time_est)
                 pop = prev.get_random_pop()
@@ -226,7 +226,7 @@ class CIsingFFSampler(FFSampler):
         up = pop0.param >= threshold
         t_up = None
         if progress:
-            r = tqdm.tqdm(range(target), f"Computing up-cross rate at {threshold:.3g}")
+            r = tqdm.tqdm(range(target), f"Computing up-cross rate at {threshold:.3g}", dynamic_ncols=True)
         while True:
             state.mc_sweep(sweeps=0, updates=updates)
             t += dt
