@@ -106,6 +106,7 @@ class FFSampler:
                                                     timeout=timeout)
         self.ifaceA.pops = npops
         self.ifaceA_up_up_times = up_up_times
+        self.ifaceA.rate = 1.0 / np.mean(up_up_times)
 
         for ino, iface in enumerate(self.interfaces):
             if ino == 0:
@@ -136,9 +137,10 @@ class FFSampler:
                 pb.display()
                 pb.close()
                 del pb
+            iface.rate = prev.rate * prev.normalized_upflow(1.0)
             sys.stderr.write(
-                f"  done {ino} / {len(self.interfaces)}" +
-                f", Param {stat_str([p.param for p in iface.pops], True)} tgt {iface.param:.3g}" +
+                f"  done {ino} [{iface.param:.3g}] of {len(self.interfaces)}" +
+                f", Param {stat_str([p.param for p in iface.pops], True)}, rate {iface.rate:.3g}" +
                 (f", UpTime {stat_str(prev.up_times(), True)}, DownTime {stat_str(prev.down_times(), True)}\n"
                 ))
 
@@ -254,13 +256,20 @@ class CIsingFFSampler(FFSampler):
 
         if progress:
             pb = tqdm.tqdm(range(samples),
-                          f"Computing up-cross rate at {threshold:.3g}",
+                          f"Up-rate at {threshold:.3g}",
                           dynamic_ncols=True,
                           leave=True)
+
+        its = 0
         while True:
+            its += 1
             state, cstats = self.run_sweep_up(state, np.inf if up else threshold , sweeps=speriod)
             param = cstats.v_in
             #print(up, t0, t_up, param, state.time)
+
+            if progress and its % 100 == 0:
+                pb.set_postfix_str(f"param {param:.3g}, {timeouts} TO, times {stat_str(up_to_up_times, True)}")
+                pb.display()
 
             if (state.time - (t_up or t0) > timeout):  # TODO: periodic resets to re-seed?
                 # Reset to pop0
@@ -272,8 +281,6 @@ class CIsingFFSampler(FFSampler):
                 timeouts += 1
                 up_to_up_times.append(timeout)
 #                print("Timeout")
-                if progress:
-                    pb.set_postfix_str(f"{timeouts} TO, times {stat_str(up_to_up_times, True)}")
 
             elif param >= threshold:
                 if not up:
@@ -284,9 +291,6 @@ class CIsingFFSampler(FFSampler):
                         if progress:
                             pb.update(1)
                     t_up = state.time
-                    if progress:
-                        pb.set_postfix_str(f"{timeouts} TO, times {stat_str(up_to_up_times, True)}")
-                        pb.display()
                     up = True
             else: # param < threshold
                 up = False
