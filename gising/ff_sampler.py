@@ -46,9 +46,13 @@ class Interface:
             return np.zeros(0)
         return np.concatenate([p.timeouts for p in self.pops])
 
-    def get_random_pop(self):
+    def get_random_pop(self, param_below=None):
         assert len(self.pops) > 0
-        return self.pops[np.random.randint(0, len(self.pops))]
+        for i in range(1000):
+            p = self.pops[np.random.randint(0, len(self.pops))]
+            if param_below is None or p.param < param_below:
+                return p
+        raise Exception("Unable to sample pop within param range")
 
     def get_time_estimate(self, quantile=0.1, base_estimate=0.1):
         Ts = []
@@ -115,7 +119,7 @@ class FFSampler:
                                leave=True)
             while len(iface.pops) < self.min_pop_size:
                 #time_est = prev.get_time_estimate(base_estimate=time_est)
-                pop = prev.get_random_pop()
+                pop = prev.get_random_pop(iface.param)
                 speriod = 0.05 # min(max(time_est / tgt_samples, 0.01), 0.1)
                 self.trace_pop(pop,
                                bot,
@@ -155,6 +159,11 @@ class CIsingFFSampler(FFSampler):
         Returns (final_state, cluster_stats).
         """
         state = s0.copy()
+
+        ### Assert
+        cstats0 = state.mc_max_cluster(samples=self.cluster_samples, edge_prob=self.cluster_e_prob)
+        assert cstats0.v_in < up
+
         updates = max(1, int(sweeps * state.n))
         state.mc_sweep(sweeps=0, updates=updates)
         cstats = state.mc_max_cluster(samples=self.cluster_samples, edge_prob=self.cluster_e_prob)
