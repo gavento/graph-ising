@@ -12,7 +12,12 @@ from gising.cising import IsingState, report_stats
 
 def main():
     parser = utils.default_parser()
-    parser.add_argument("--grid", default=10, type=int, help="Use square grid NxN.")
+    parser.add_argument("--grid", default=None, type=int, help="Use square toroidal grid NxN.")
+    parser.add_argument("--pref",
+                        default=None,
+                        type=str,
+                        metavar="N,M",
+                        help="Use Barabasi-Albert grap on N vertices with M attachments.")
     parser.add_argument("--require_samples",
                         "-s",
                         default=10,
@@ -32,8 +37,16 @@ def main():
     args = utils.init_experiment(parser)
     assert args.Imax is not None
 
-    g = nx.grid_2d_graph(args.grid, args.grid, periodic=True)
-    g = nx.relabel.convert_node_labels_to_integers(g, ordering='sorted')
+    if args.grid is not None:
+        gname = f"2D toroid grid {args.grid}x{args.grid}"
+        g = nx.grid_2d_graph(args.grid, args.grid, periodic=True)
+        g = nx.relabel.convert_node_labels_to_integers(g, ordering='sorted')
+    elif args.pref is not None:
+        gname = f"Bar.-Alb. pref. att. graph {args.pref}"
+        n, m = args.pref.split(",")
+        g = nx.random_graphs.barabasi_albert_graph(int(n), int(m))
+    else:
+        raise Exception("Graph type required")
 
     Ifs = sorted(set(np.linspace(args.Imin, args.Imax, args.Is, dtype=int)))
     print("Interfaces: {}".format(Ifs))
@@ -105,7 +118,8 @@ def main():
         ]
         layout = go.Layout(
             yaxis=dict(rangemode='tozero', autorange=True),
-            yaxis2=dict(showticklabels=False,
+            yaxis2=dict(
+                showticklabels=False,
                 overlaying='y',
                 side='left',
                 #anchor='free',
@@ -115,11 +129,14 @@ def main():
                 type='log',
                 autorange=True),
             yaxis3=dict(title='E', overlaying='y', side='right', autorange=True),
-            title=f'FF sampling on {args.grid}x{args.grid} T={args.T:.3g}, F={args.F:.3g}, {args.require_samples} states/iface, {args.cluster_samples} clustering samples')
+            title=
+            f'FF sampling on {gname}, T={args.T:.3g}, F={args.F:.3g}, {args.require_samples} states/iface, {args.cluster_samples} clustering samples'
+        )
         plotly.offline.plot(go.Figure(data=data, layout=layout),
                             filename=args.fbase + '.html',
                             auto_open=False,
                             include_plotlyjs='directory')
+        print(f"Wrote {args.fbase + '.html'}")
 
 
 main()

@@ -150,14 +150,14 @@ class CIsingFFSampler(FFSampler):
             state = IsingState(graph=graph)
         self.start_pop = PopSample(0.0, None, 0.0, state, None)
 
-    def run_sweep_up(self, state, up, sweeps=0.1, up_accuracy=0.1):
+    def run_sweep_up(self, s0, up, sweeps=0.1, up_accuracy=0.1):
         """
         Runs sim for `sweeps` and  
         Assumes that state param is strictly below `down`.
     
         Returns (final_state, cluster_stats).
         """
-        s0 = state.copy()
+        state = s0.copy()
         updates = max(1, int(sweeps * state.n))
         state.mc_sweep(sweeps=0, updates=updates)
         cstats = state.mc_max_cluster(samples=self.cluster_samples, edge_prob=self.cluster_e_prob)
