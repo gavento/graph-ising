@@ -1,4 +1,6 @@
 import itertools
+import pickle
+
 import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
@@ -6,8 +8,8 @@ import plotly
 import plotly.graph_objs as go
 
 from gising import utils
-from gising.ff_sampler import CIsingFFSampler
 from gising.cising import IsingState, report_stats
+from gising.ff_sampler import CIsingFFSampler
 
 
 def main():
@@ -77,6 +79,10 @@ def main():
     ff.fill_interfaces(progress=True, timeout=args.timeout)
     print(f"FF cising stats:\n{report_stats()}")
 
+    with utils.timed(f"write '{args.fbase + '-FF.pickle'}'"):
+        with open(args.fbase + '-FF.pickle', 'wb') as f:
+            pickle.dump(ff, f)
+
     Xs = []
     Es, Es_std = [], []
     ECs, ECs_std = [], []
@@ -104,11 +110,12 @@ def main():
             apstat(ECs, ECs_std, ces)
             if ino < len(ff.interfaces) - 1:
                 UPs.append(iface.normalized_upflow(ff.interfaces[ino + 1].param - iface.param))
+            Rates.append(iface.rate)
             # TODO: use iface.rate, check eq.?
-            if ino == 0:
-                Rates.append(1.0 / np.mean(ff.ifaceA_up_up_times))
-            else:
-                Rates.append(Rates[-1] * ff.interfaces[ino - 1].normalized_upflow(1.0))
+            #if ino == 0:
+            #    Rates.append(1.0 / np.mean(ff.ifaceA_up_up_times))
+            #else:
+            #    Rates.append(Rates[-1] * ff.interfaces[ino - 1].normalized_upflow(1.0))
 
     with utils.timed("plot"):
         data = [

@@ -21,7 +21,9 @@ With T=1.5, F=0.05, the nucleation rate of 2D grid is 2.78e-19, see [here, sec I
 python ffsampling.py -T 1.5 -F 0.05 --grid 50 -s 100 --Is 400 --Imin 5 --Imax 1000 -c 50x50-T1.5-F0.05-s100-I400
 ```
 
-Reproduced as (at 2973022ea65b73b85f39368e1b62663c75ecdffb): 2.14e-19, 2.71e-19.
+Reproduced as (at 2973022ea65b73b85f39368e1b62663c75ecdffb):
+
+Unnormed, Imin 5: 2.14e-19, 2.71e-19.
 
 ### 3D grid nucleation rate
 

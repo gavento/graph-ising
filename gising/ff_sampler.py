@@ -111,7 +111,7 @@ class FFSampler:
                                                     timeout=timeout)
         self.ifaceA.pops = npops
         self.ifaceA_up_up_times = up_up_times
-        self.ifaceA.rate = 1.0 / np.mean(up_up_times)
+        self.ifaceA.rate = 1.0 / np.mean(up_up_times) / self.graph.order()
 
         for ino, iface in enumerate(self.interfaces):
             if ino == 0:
@@ -144,10 +144,10 @@ class FFSampler:
                 del pb
             iface.rate = prev.rate * prev.normalized_upflow(1.0)
             sys.stderr.write(
-                f"  done {ino} [{iface.param:.3g}] of {len(self.interfaces)}" +
-                f", Param {stat_str([p.param for p in iface.pops], True)}, rate {iface.rate:.3g}" +
-                (f", UpTime {stat_str(prev.up_times(), True)}, DownTime {stat_str(prev.down_times(), True)}\n"
-                ))
+                f"  done {ino} [{iface.param:.3g}] of {len(self.interfaces)}, rate {iface.rate:.3g}"
+                + f", Param {stat_str([p.param for p in iface.pops], True)}" +
+                f", UpTime {stat_str(prev.up_times(), True)}, DownTime {stat_str(prev.down_times(), True)}\n"
+            )
 
 
 class CIsingFFSampler(FFSampler):
