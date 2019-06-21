@@ -37,12 +37,12 @@ def init_experiment(parser):
                       (('-' + args.comment) if args.comment else ''))
     args.fbase = os.path.join(args.logdir, args.full_name)
     os.makedirs(args.logdir, exist_ok=True)
-    log_f = args.fbase + '.log'
-    sys.stderr.write("Logfile: {}\n".format(log_f))
-    args.logfile = open(log_f, 'wt')
-    args.logfile.write("Cmd:\n  {}\nArgs:\n{}\n".format(
-        ' '.join(sys.argv),
-        '\n'.join("  {:19s} {}".format(k, v) for k, v in args.__dict__.items() if k[0] != '_')))
+    args.logfile = args.fbase + '.log'
+    sys.stderr.write("Logfile: {}\n".format(args.logfile))
+    with open(args.logfile, 'wt') as f:
+        f.write("Cmd:\n  {}\nArgs:\n{}\n".format(
+            ' '.join(sys.argv),
+            '\n'.join("  {:19s} {}".format(k, v) for k, v in args.__dict__.items() if k[0] != '_')))
     return args
 
 
@@ -55,3 +55,40 @@ def timed(name=None, iters=None, log=sys.stderr):
     if iters is not None:
         msg += " ({} iters, {:.3f} its / s)".format(iters, iters / (t1 - t0))
     log.write(msg + "\n")
+
+
+class Tee:
+    """
+    Redirect stdin+stdout to a file and at the same time to the orig stdin+stdout.
+    Use as a context manager or with .start() and .stop().
+    """
+
+    def __init__(self, name, mode="at"):
+        self.filename = name
+        self.mode = mode
+
+    def __enter__(self):
+        self.start()
+
+    def __exit__(self, *exceptinfo):
+        self.stop(*exceptinfo)
+
+    def start(self):
+        self.file = open(self.filename, self.mode)
+        self.stdout = sys.stdout
+        self.stderr = sys.stderr
+        sys.stdout = self
+        sys.stderr = self
+
+    def stop(self, *exceptinfo):
+        sys.stdout = self.stdout
+        sys.stderr = self.stderr
+        self.file.close()
+
+    def write(self, data):
+        self.file.write(data)
+        self.stdout.write(data)
+
+    def flush(self):
+        self.file.flush()
+        self.stdout.flush()

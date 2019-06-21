@@ -122,7 +122,8 @@ class FFSampler:
                 pb = tqdm.tqdm(range(self.min_pop_size),
                                f"Gen interface {ino} [{iface.param:6.2f}]",
                                dynamic_ncols=True,
-                               leave=True)
+                               leave=False,
+                               file=progress if progress is not True else sys.stderr)
             while len(iface.pops) < self.min_pop_size:
                 # Select clustering seed for this pop
                 cseed = np.random.randint(1 << 60)
@@ -141,6 +142,7 @@ class FFSampler:
             if progress:
                 pb.display()
                 pb.close()
+                print(pb)
                 del pb
             iface.rate = prev.rate * prev.normalized_upflow(1.0)
             sys.stderr.write(
@@ -271,7 +273,8 @@ class CIsingFFSampler(FFSampler):
             pb = tqdm.tqdm(range(samples),
                            f"Up-rate at {threshold:.3g}",
                            dynamic_ncols=True,
-                           leave=True)
+                           leave=False,
+                           file=progress if progress is not True else sys.stderr)
 
         its = 0
         while True:
@@ -317,5 +320,6 @@ class CIsingFFSampler(FFSampler):
 
             if len(npops) >= samples:
                 if progress:
+                    print(pb)
                     pb.close()
                 return (up_to_up_times, npops)

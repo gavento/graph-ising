@@ -40,6 +40,9 @@ def main():
     args = utils.init_experiment(parser)
     assert args.Imax is not None
 
+    tee = utils.Tee(args.logfile)
+    tee.start()
+
     with utils.timed("create graph"):
         if args.grid is not None:
             gname = f"2D toroid grid {args.grid}x{args.grid}"
@@ -76,11 +79,11 @@ def main():
                          cluster_e_prob=cluster_e_prob,
                          cluster_samples=cluster_samples)
 
-    ff.fill_interfaces(progress=True, timeout=args.timeout)
+    ff.fill_interfaces(progress=tee.stderr, timeout=args.timeout)
     print(f"FF cising stats:\n{report_stats()}")
 
     with utils.timed(f"write '{args.fbase + '-FF.pickle'}'"):
-        with open(args.fbase + '-FF.pickle', 'wb') as f:
+        with open(args.fbase + '.ffs.pickle', 'wb') as f:
             pickle.dump(ff, f)
 
     Xs = []
