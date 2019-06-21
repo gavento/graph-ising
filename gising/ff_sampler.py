@@ -9,6 +9,7 @@ import tqdm
 from .cising import ClusterStats, IsingState
 from .utils import stat_str
 
+
 @attr.s
 class PopSample:
     param = attr.ib(type=float)
@@ -46,11 +47,15 @@ class Interface:
             return np.zeros(0)
         return np.concatenate([p.timeouts for p in self.pops])
 
-    def get_random_pop(self, param_below=None):
+    def get_random_pop(self, param_below=None, cseed=None, **kwargs):
         assert len(self.pops) > 0
         for i in range(1000):
-            p = self.pops[np.random.randint(0, len(self.pops))]
-            if param_below is None or p.param < param_below:
+            p = self.pops[np.random.randint(0, len(self.pops))]  # TODO: Use the seed?
+            param = p.param
+            if cseed is not None and param_below is not None:
+                cstats = p.state.mc_max_cluster(seed=cseed, **kwargs)
+                param = cstats.v_in
+            if param_below is None or param < param_below:
                 return p
         raise Exception("Unable to sample pop within param range")
 
@@ -119,14 +124,14 @@ class FFSampler:
                                dynamic_ncols=True,
                                leave=True)
             while len(iface.pops) < self.min_pop_size:
-                #time_est = prev.get_time_estimate(base_estimate=time_est)
-                pop = prev.get_random_pop(iface.param)
-                speriod = 0.05 # min(max(time_est / tgt_samples, 0.01), 0.1)
-                self.trace_pop(pop,
-                               bot,
-                               iface,
-                               timeout=timeout,
-                               speriod=speriod)
+                # Select clustering seed for this pop
+                cseed = np.random.randint(1 << 60)
+                pop = prev.get_random_pop(iface.param,
+                                          cseed=cseed,
+                                          samples=self.cluster_samples,
+                                          edge_prob=self.cluster_e_prob)
+                speriod = 0.05  # min(max(time_est / tgt_samples, 0.01), 0.1)
+                self.trace_pop(pop, bot, iface, timeout=timeout, speriod=speriod, cseed=cseed)
                 if progress:
                     pb.update(len(iface.pops) - pb.n)
                     pb.set_postfix_str(
@@ -153,7 +158,7 @@ class CIsingFFSampler(FFSampler):
             state = IsingState(graph=graph)
         self.start_pop = PopSample(0.0, None, 0.0, state, None)
 
-    def run_sweep_up(self, s0, up, sweeps=0.1, up_accuracy=0.1):
+    def run_sweep_up(self, s0, up, sweeps=0.1, up_accuracy=0.1, cseed=None):
         """
         Runs sim for `sweeps` and  
         Assumes that state param is strictly below `up`.
@@ -163,12 +168,17 @@ class CIsingFFSampler(FFSampler):
         state = s0.copy()
 
         ### Assert
-        cstats0 = state.mc_max_cluster(samples=self.cluster_samples, edge_prob=self.cluster_e_prob)
-        assert cstats0.v_in < up
+        cstats0 = state.mc_max_cluster(samples=self.cluster_samples,
+                                       edge_prob=self.cluster_e_prob,
+                                       seed=cseed)
+        if cstats0.v_in >= up:
+            print(f"  - run_sweep_up param {cstats0.v_in} not below up ({up}) at {s0}")
 
         updates = max(1, int(sweeps * state.n))
         state.mc_sweep(sweeps=0, updates=updates)
-        cstats = state.mc_max_cluster(samples=self.cluster_samples, edge_prob=self.cluster_e_prob)
+        cstats = state.mc_max_cluster(samples=self.cluster_samples,
+                                      edge_prob=self.cluster_e_prob,
+                                      seed=cseed)
         param = cstats.v_in
         if param <= up + up_accuracy:
             # Success
@@ -184,9 +194,10 @@ class CIsingFFSampler(FFSampler):
 
             state.mc_sweep(sweeps=0, updates=updates)
             cstats = state.mc_max_cluster(samples=self.cluster_samples,
-                                          edge_prob=self.cluster_e_prob)
+                                          edge_prob=self.cluster_e_prob,
+                                          seed=cseed)
             param = cstats.v_in
-#            print(updates_lo, updates, updates_hi, up, param)
+            #            print(updates_lo, updates, updates_hi, up, param)
 
             if (param >= up and param <= up + up_accuracy) or (updates == updates_hi):
                 # Success or minimal step
@@ -206,7 +217,8 @@ class CIsingFFSampler(FFSampler):
                   timeout=100.0,
                   speriod=0.1,
                   min_samples=5,
-                  max_over_param=0.5):
+                  max_over_param=0.5,
+                  cseed=None):
         """
         Returns None.
         """
@@ -216,7 +228,7 @@ class CIsingFFSampler(FFSampler):
         t0 = state.time  # Time
 
         while True:
-            state, cstats = self.run_sweep_up(state, iface_high.param, sweeps=speriod)
+            state, cstats = self.run_sweep_up(state, iface_high.param, sweeps=speriod, cseed=cseed)
             elapsed = state.time - t0
             param = cstats.v_in
 
@@ -250,36 +262,44 @@ class CIsingFFSampler(FFSampler):
 
         state = pop0.state.copy()
         state.seed = np.random.randint(1 << 60)  # TODO: Make reproducible? Modify state?
+        cseed = state.seed
         t0 = state.time
         up = pop0.param >= threshold
         t_up = None
 
         if progress:
             pb = tqdm.tqdm(range(samples),
-                          f"Up-rate at {threshold:.3g}",
-                          dynamic_ncols=True,
-                          leave=True)
+                           f"Up-rate at {threshold:.3g}",
+                           dynamic_ncols=True,
+                           leave=True)
 
         its = 0
         while True:
             its += 1
-            state, cstats = self.run_sweep_up(state, np.inf if up else threshold , sweeps=speriod)
+            state, cstats = self.run_sweep_up(state,
+                                              np.inf if up else threshold,
+                                              sweeps=speriod,
+                                              cseed=cseed)
             param = cstats.v_in
             #print(up, t0, t_up, param, state.time)
 
-            if progress and its % 100 == 0:
-                pb.set_postfix_str(f"param {param:.3g}, {timeouts} TO, times {stat_str(up_to_up_times, True)}")
+            if progress and its % 10 == 0:
+                pb.set_postfix_str(
+                    f"param {param:.3g}, {timeouts} TO, times {stat_str(up_to_up_times, True)}")
                 pb.display()
 
             if (state.time - (t_up or t0) > timeout):  # TODO: periodic resets to re-seed?
                 # Reset to pop0
                 state = pop0.state.copy()
                 state.seed = np.random.randint(1 << 60)  # TODO: Make reproducible? Modify state?
+                cseed = state.seed
                 t0 = state.time
                 up = pop0.param >= threshold
                 t_up = None
                 timeouts += 1
                 up_to_up_times.append(timeout)
+
+
 #                print("Timeout")
 
             elif param >= threshold:
@@ -292,7 +312,7 @@ class CIsingFFSampler(FFSampler):
                             pb.update(1)
                     t_up = state.time
                     up = True
-            else: # param < threshold
+            else:  # param < threshold
                 up = False
 
             if len(npops) >= samples:

@@ -38,20 +38,21 @@ def main():
     args = utils.init_experiment(parser)
     assert args.Imax is not None
 
-    if args.grid is not None:
-        gname = f"2D toroid grid {args.grid}x{args.grid}"
-        g = nx.grid_2d_graph(args.grid, args.grid, periodic=True)
-        g = nx.relabel.convert_node_labels_to_integers(g, ordering='sorted')
-    elif args.grid3d is not None:
-        gname = f"3D toroid grid {args.grid3d}x{args.grid3d}x{args.grid3d}"
-        g = nx.generators.lattice.grid_graph([args.grid3d]*3, periodic=True)  
-        g = nx.relabel.convert_node_labels_to_integers(g, ordering='sorted')
-    elif args.pref is not None:
-        gname = f"Bar.-Alb. pref. att. graph {args.pref}"
-        n, m = args.pref.split(",")
-        g = nx.random_graphs.barabasi_albert_graph(int(n), int(m))
-    else:
-        raise Exception("Graph type required")
+    with utils.timed("create graph"):
+        if args.grid is not None:
+            gname = f"2D toroid grid {args.grid}x{args.grid}"
+            g = nx.grid_2d_graph(args.grid, args.grid, periodic=True)
+            g = nx.relabel.convert_node_labels_to_integers(g, ordering='sorted')
+        elif args.grid3d is not None:
+            gname = f"3D toroid grid {args.grid3d}x{args.grid3d}x{args.grid3d}"
+            g = nx.generators.lattice.grid_graph([args.grid3d]*3, periodic=True)  
+            g = nx.relabel.convert_node_labels_to_integers(g, ordering='sorted')
+        elif args.pref is not None:
+            gname = f"Bar.-Alb. pref. att. graph {args.pref}"
+            n, m = args.pref.split(",")
+            g = nx.random_graphs.barabasi_albert_graph(int(n), int(m))
+        else:
+            raise Exception("Graph type required")
 
     Ifs = sorted(set(np.linspace(args.Imin, args.Imax, args.Is, dtype=int)))
     print("Interfaces: {}".format(Ifs))
@@ -63,7 +64,9 @@ def main():
         cluster_samples = 1
         cluster_e_prob = 1.0
 
-    state0 = IsingState(graph=g, T=args.T, F=args.F)
+    with utils.timed("create state"):
+        state0 = IsingState(graph=g, T=args.T, F=args.F)
+        
     ff = CIsingFFSampler(g,
                          Ifs,
                          state=state0,
@@ -101,8 +104,9 @@ def main():
             apstat(ECs, ECs_std, ces)
             if ino < len(ff.interfaces) - 1:
                 UPs.append(iface.normalized_upflow(ff.interfaces[ino + 1].param - iface.param))
+            # TODO: use iface.rate, check eq.?
             if ino == 0:
-                Rates.append(1.0 / np.mean(ff.ifaceA_up_up_times))  # TODO: Consider geom. mean
+                Rates.append(1.0 / np.mean(ff.ifaceA_up_up_times))
             else:
                 Rates.append(Rates[-1] * ff.interfaces[ino - 1].normalized_upflow(1.0))
 
