@@ -50,7 +50,7 @@ def main():
             g = nx.relabel.convert_node_labels_to_integers(g, ordering='sorted')
         elif args.grid3d is not None:
             gname = f"3D toroid grid {args.grid3d}x{args.grid3d}x{args.grid3d}"
-            g = nx.generators.lattice.grid_graph([args.grid3d]*3, periodic=True)  
+            g = nx.generators.lattice.grid_graph([args.grid3d] * 3, periodic=True)
             g = nx.relabel.convert_node_labels_to_integers(g, ordering='sorted')
         elif args.pref is not None:
             gname = f"Bar.-Alb. pref. att. graph {args.pref}"
@@ -58,6 +58,9 @@ def main():
             g = nx.random_graphs.barabasi_albert_graph(int(n), int(m))
         else:
             raise Exception("Graph type required")
+        print(
+            f"Created graph with {g.order()} nodes, {g.size()} edges, degrees {utils.stat_str([g.degree(v) for v in g.nodes])}"
+        )
 
     Ifs = sorted(set(np.linspace(args.Imin, args.Imax, args.Is, dtype=int)))
     print("Interfaces: {}".format(Ifs))
@@ -71,7 +74,7 @@ def main():
 
     with utils.timed("create state"):
         state0 = IsingState(graph=g, T=args.T, F=args.F)
-        
+
     ff = CIsingFFSampler(g,
                          Ifs,
                          state=state0,
