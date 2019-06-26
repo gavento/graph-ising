@@ -123,7 +123,7 @@ class FFSampler:
             while len(iface.pops) < self.min_pop_size:
                 # Select clustering seed for this pop
                 pop = self.get_random_pop(prev, iface.param)
-                speriod = 0.05  # min(max(time_est / tgt_samples, 0.01), 0.1)
+                speriod = 0.01  # min(max(time_est / tgt_samples, 0.01), 0.1)
                 self.trace_pop(pop,
                                bot,
                                iface,
@@ -165,7 +165,7 @@ class FFSampler:
                           threshold,
                           samples,
                           timeout=100.0,
-                          speriod=0.05,
+                          speriod=0.01,
                           progress=False):
         """
         Returns (up_to_up_times, pops)
