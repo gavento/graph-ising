@@ -59,7 +59,7 @@ def main():
         else:
             raise Exception("Graph type required")
         print(
-            f"Created graph with {g.order()} nodes, {g.size()} edges, degrees {utils.stat_str([g.degree(v) for v in g.nodes])}"
+            f"Created graph with {g.order()} nodes, {g.size()} edges, degrees {utils.stat_str([g.degree(v) for v in g.nodes], True)}"
         )
 
     Ifs = sorted(set(np.linspace(args.Imin, args.Imax, args.Is, dtype=int)))
@@ -82,8 +82,13 @@ def main():
                          cluster_e_prob=cluster_e_prob,
                          cluster_samples=cluster_samples)
 
-    ff.fill_interfaces(progress=tee.stderr, timeout=args.timeout)
+    try:
+        ff.fill_interfaces(progress=tee.stderr, timeout=args.timeout)
+    except KeyboardInterrupt:
+        print("\nInterrupted, trying to still report anything already computed ...")
     print(f"FF cising stats:\n{report_stats()}")
+
+    print(f"Firts interface at {ff.interfaces[0].param}, rate {ff.interfaces[0].rate:.3g}")
 
     with utils.timed(f"write '{args.fbase + '-FF.pickle'}'"):
         with open(args.fbase + '.ffs.pickle', 'wb') as f:
@@ -107,21 +112,12 @@ def main():
                 es.append(p.state.get_hamiltonian())
                 ces.append(p.cluster_stats.relative_E)
 
-            #print("Max Cluster", cs)
-            #ls = [''.join(".X"[v] for v in r) for r in cs.mask.reshape([args.grid, args.grid])]
-            #print('\n'.join(ls))
-
             Xs.append(iface.param)
             apstat(Es, Es_std, es)
             apstat(ECs, ECs_std, ces)
             if ino < len(ff.interfaces) - 1:
                 UPs.append(iface.normalized_upflow(ff.interfaces[ino + 1].param - iface.param))
             Rates.append(iface.rate)
-            # TODO: use iface.rate, check eq.?
-            #if ino == 0:
-            #    Rates.append(1.0 / np.mean(ff.ifaceA_up_up_times))
-            #else:
-            #    Rates.append(Rates[-1] * ff.interfaces[ino - 1].normalized_upflow(1.0))
 
     with utils.timed("plot"):
         data = [

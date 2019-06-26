@@ -28,6 +28,7 @@ class PopSample:
 class Interface:
     param = attr.ib(type=float)
     pops = attr.ib(factory=list, repr=False)
+    rate = attr.ib(0.0, type=float)
 
     def up_times(self):
         if not self.pops:
@@ -71,7 +72,9 @@ class Interface:
     def normalized_upflow(self, width):
         up = len(self.up_times())
         oth = len(self.down_times()) + len(self.timeouts())
-        return (up / (up + oth))**(1 / width)
+        if up == 0:
+            oth = 1.0
+        return (up / (up + oth))**(1.0 / width)
 
     def __repr__(self):
         uts = self.up_times()
@@ -110,7 +113,6 @@ class FFSampler:
                                                     progress=progress,
                                                     timeout=timeout)
         self.ifaceA.pops = npops
-        self.ifaceA_up_up_times = up_up_times
         self.ifaceA.rate = 1.0 / np.mean(up_up_times) / self.graph.order()
 
         for ino, iface in enumerate(self.interfaces):
@@ -199,7 +201,6 @@ class CIsingFFSampler(FFSampler):
                                           edge_prob=self.cluster_e_prob,
                                           seed=cseed)
             param = cstats.v_in
-            #            print(updates_lo, updates, updates_hi, up, param)
 
             if (param >= up and param <= up + up_accuracy) or (updates == updates_hi):
                 # Success or minimal step
@@ -284,7 +285,6 @@ class CIsingFFSampler(FFSampler):
                                               sweeps=speriod,
                                               cseed=cseed)
             param = cstats.v_in
-            #print(up, t0, t_up, param, state.time)
 
             if progress and its % 10 == 0:
                 pb.set_postfix_str(
@@ -301,9 +301,6 @@ class CIsingFFSampler(FFSampler):
                 t_up = None
                 timeouts += 1
                 up_to_up_times.append(timeout)
-
-
-#                print("Timeout")
 
             elif param >= threshold:
                 if not up:
