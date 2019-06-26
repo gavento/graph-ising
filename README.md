@@ -38,6 +38,7 @@ Reproduced as (at 2973022ea65b73b85f39368e1b62663c75ecdffb):
 DONE: Ctrl+C outputs
 DONE: First iface rate shown
 DONE: Print iface deg dist of cluster/total, other stats
+
+TODO: Estimate mid-point I based on P(L_B|L_I)=0.5
 TODO: Output graphs / cluster snapshots at ifaces
 TODO: Estimate error (prod of bernoulli)
-
