@@ -1,5 +1,5 @@
 import concurrent.futures
-import ising
+from gising.cising import IsingState
 import networkx as nx
 import numpy as np
 import time
@@ -13,12 +13,12 @@ def do_job(state, sweeps):
 def test():
 
     # Test 0
-    s = ising.IsingState(n=5, spins=[-1, -1, -1, 1, 1])
+    s = IsingState(n=5, spins=[-1, -1, -1, 1, 1])
     s.set_edge_list([(0,1), (1,2), (2,3), (3,4), (4,0)])
     print(s.neigh_list)
     print(s.neigh_offset)
     print(s.degree)
-    stat = s.mc_max_cluster()
+    stat = s.mc_max_cluster(value=-1)
     assert stat.v_in == 3
     assert stat.v_in_border == 2
     assert stat.v_out_border == 2
@@ -38,7 +38,7 @@ def test():
 
     print("Gen pop ...")
     t0 = time.time()
-    pop = [ising.IsingState(graph=g, seed=i, T=6.0, field=1.5) for i in range(popsize)]
+    pop = [IsingState(graph=g, seed=i, T=6.0, F=1.5) for i in range(popsize)]
     print("  Time: %f" % (time.time() - t0))
 
 

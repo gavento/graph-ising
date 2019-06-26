@@ -3,7 +3,6 @@ import time
 
 import attr
 import numpy as np
-import tensorflow.compat.v2 as tf
 import tqdm
 
 from .cising import ClusterStats, IsingState
