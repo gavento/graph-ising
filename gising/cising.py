@@ -69,8 +69,8 @@ load_ffi()
 
 
 def report_stats():
-    return f"""Updated {cising.update_count} nodes in {cising.update_ns * 1e-9:.3f}s ({cising.update_count / cising.update_ns * 1e9} n/s)
-Clustered {cising.cluster_count} nodes in {cising.cluster_ns * 1e-9:.3f}s ({cising.cluster_count / cising.cluster_ns * 1e9} n/s)"""
+    return f"""Updated {cising.update_count} nodes in {cising.update_ns * 1e-9:.3f}s ({cising.update_count / max(cising.update_ns, 1e-9) * 1e9} n/s)
+Clustered {cising.cluster_count} nodes in {cising.cluster_ns * 1e-9:.3f}s ({cising.cluster_count / max(cising.cluster_ns, 1e-9) * 1e9} n/s)"""
 
 
 class ClusterStats(object):

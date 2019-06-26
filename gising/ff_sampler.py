@@ -47,18 +47,6 @@ class Interface:
             return np.zeros(0)
         return np.concatenate([p.timeouts for p in self.pops])
 
-    def get_random_pop(self, param_below=None, cseed=None, **kwargs):
-        assert len(self.pops) > 0
-        for i in range(1000):
-            p = self.pops[np.random.randint(0, len(self.pops))]  # TODO: Use the seed?
-            param = p.param
-            if cseed is not None and param_below is not None:
-                cstats = p.state.mc_max_cluster(seed=cseed, **kwargs)
-                param = cstats.v_in
-            if param_below is None or param < param_below:
-                return p
-        raise Exception("Unable to sample pop within param range")
-
     def get_time_estimate(self, quantile=0.1, base_estimate=0.1):
         Ts = []
         for p in self.pops:
@@ -134,10 +122,7 @@ class FFSampler:
                                file=progress if progress is not True else sys.stderr)
             while len(iface.pops) < self.min_pop_size:
                 # Select clustering seed for this pop
-                pop = prev.get_random_pop(iface.param,
-                                          cseed=self.cluster_seed,
-                                          samples=self.cluster_samples,
-                                          edge_prob=self.cluster_e_prob)
+                pop = self.get_random_pop(prev, iface.param)
                 speriod = 0.05  # min(max(time_est / tgt_samples, 0.01), 0.1)
                 self.trace_pop(pop,
                                bot,
@@ -294,6 +279,18 @@ class CIsingFFSampler(FFSampler):
 
     def compute_param(self, state):
         raise NotImplementedError("Use a subclass")
+
+    def get_random_pop(self, iface, param_below=None):
+        assert len(iface.pops) > 0
+        for i in range(1000):
+            p = iface.pops[np.random.randint(0, len(iface.pops))]  # TODO: Use the seed?
+            param = p.param
+            if param_below is not None:
+                cstats = self.compute_param(p.state)
+                param = cstats.v_in
+            if param_below is None or param < param_below:
+                return p
+        raise Exception("Unable to sample pop within param range")
 
     def run_sweep_up(self, s0, up, sweeps=0.1, up_accuracy=0.1):
         """
