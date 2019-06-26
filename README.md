@@ -1,15 +1,15 @@
-* cising.c: Fast Ising model on graphs
-* ising.py: Python wrapper IsingState and cffi interface to cising.c
-* tp_ising.py: Demo with ThreadPoolExecutor
+# Ising model computation on graphs
 
-Python 2.x requirements: numpy, networkx, cffi, futures
+A suite of tools for simulating the nucleation of the Ising model on general graphs.
+Includes a forward-flux sampling for nucleation rate estimation.
 
-Python 3.x requirements: numpy, networkx, cffi
+Requirements: `numpy networkx cffi plotly attrs tqdm pytest`
 
 Running:
-* make
-* python tp_ising.py
 
+* `make`
+* `make test` (optional)
+* `python ffsampling.py -h`
 
 ## Large tests
 
@@ -34,3 +34,10 @@ python ffsampling.py -T 2.662 -F 0.589 --grid3d 50 -s 100 --Imin 10 --Imax 400 -
 ```
 
 Reproduced as (at 2973022ea65b73b85f39368e1b62663c75ecdffb):
+
+DONE: Ctrl+C outputs
+DONE: First iface rate shown
+DONE: Print iface deg dist of cluster/total, other stats
+TODO: Output graphs / cluster snapshots at ifaces
+TODO: Estimate error (prod of bernoulli)
+
