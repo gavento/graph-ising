@@ -153,6 +153,20 @@ class FFSampler:
                 f", UpTime {stat_str(prev.up_times(), True)}, DownTime {stat_str(prev.down_times(), True)}\n"
             )
 
+            # Report in-cluster degrees and other stats
+            cs = iface.pops[0].cluster_stats
+            dgs = [0] * self.graph.size()
+            dgc = [0] * self.graph.size()
+            for v in range(self.graph.order()):
+                d = self.graph.degree(v)
+                dgs[d] += 1
+                if cs.mask[v] > 0:
+                    dgc[d] += 1
+            dgstr = ' '.join(f"{d}:{c}/{g}" for d, (g, c) in enumerate(zip(dgs, dgc)) if g > 0)
+            sys.stderr.write(
+                f"  one cluster: V={cs.v_in} E={cs.e_in} Eout={cs.e_border} degs: {dgstr}\n"
+            )
+
 
 class CIsingFFSampler(FFSampler):
 
