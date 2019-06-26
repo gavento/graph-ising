@@ -90,7 +90,13 @@ class Interface:
 
 class FFSampler:
 
-    def __init__(self, graph, interfaces, min_pop_size=10, cluster_samples=1, cluster_e_prob=1.0, cluster_seed=None):
+    def __init__(self,
+                 graph,
+                 interfaces,
+                 min_pop_size=10,
+                 cluster_samples=1,
+                 cluster_e_prob=1.0,
+                 cluster_seed=None):
         self.graph = graph
         self.min_pop_size = min_pop_size
         self.cross_A_samples = 2 * min_pop_size
@@ -133,7 +139,11 @@ class FFSampler:
                                           samples=self.cluster_samples,
                                           edge_prob=self.cluster_e_prob)
                 speriod = 0.05  # min(max(time_est / tgt_samples, 0.01), 0.1)
-                self.trace_pop(pop, bot, iface, timeout=timeout, speriod=speriod, cseed=self.cluster_seed)
+                self.trace_pop(pop,
+                               bot,
+                               iface,
+                               timeout=timeout,
+                               speriod=speriod)
                 if progress:
                     pb.update(len(iface.pops) - pb.n)
                     pb.set_postfix_str(
@@ -163,104 +173,7 @@ class FFSampler:
                     dgc[d] += 1
             dgstr = ' '.join(f"{d}:{c}/{g}" for d, (g, c) in enumerate(zip(dgs, dgc)) if g > 0)
             sys.stderr.write(
-                f"  one cluster: V={cs.v_in} E={cs.e_in} Eout={cs.e_border} degs: {dgstr}\n"
-            )
-
-
-class CIsingFFSampler(FFSampler):
-
-    def __init__(self, graph, interfaces, state=None, **kwargs):
-        super().__init__(graph, interfaces, **kwargs)
-        if state is None:
-            state = IsingState(graph=graph)
-        self.start_pop = PopSample(0.0, None, 0.0, state, None)
-
-    def run_sweep_up(self, s0, up, sweeps=0.1, up_accuracy=0.1, cseed=None):
-        """
-        Runs sim for `sweeps` and  
-        Assumes that state param is strictly below `up`.
-    
-        Returns (final_state, cluster_stats).
-        """
-        state = s0.copy()
-
-        ### Assert
-        cstats0 = state.mc_max_cluster(samples=self.cluster_samples,
-                                       edge_prob=self.cluster_e_prob,
-                                       seed=cseed)
-        if cstats0.v_in >= up:
-            print(f"  - run_sweep_up param {cstats0.v_in} not below up ({up}) at {s0}")
-
-        updates = max(1, int(sweeps * state.n))
-        state.mc_random_update(updates=updates)
-        cstats = state.mc_max_cluster(samples=self.cluster_samples,
-                                      edge_prob=self.cluster_e_prob,
-                                      seed=cseed)
-        param = cstats.v_in
-        if param <= up + up_accuracy:
-            # Success
-            return (state, cstats)
-
-        # Param above up + up_accuracy -> do bisection
-        updates_hi = updates
-        updates_lo = 0
-        runs = 0
-        while True:
-            state = s0.copy()
-            updates = (updates_hi + updates_lo + 1) // 2
-
-            state.mc_random_update(updates=updates)
-            cstats = state.mc_max_cluster(samples=self.cluster_samples,
-                                          edge_prob=self.cluster_e_prob,
-                                          seed=cseed)
-            param = cstats.v_in
-
-            if (param >= up and param <= up + up_accuracy) or (updates == updates_hi):
-                # Success or minimal step
-                return (state, cstats)
-            if param < up:
-                updates_lo = updates
-            if param > up + up_accuracy:
-                updates_hi = updates
-
-            runs += 1
-            assert runs < 250  # Bisection halving should never get here
-
-    def trace_pop(self,
-                  pop,
-                  iface_low,
-                  iface_high,
-                  timeout=100.0,
-                  speriod=0.1,
-                  min_samples=5,
-                  max_over_param=0.5,
-                  cseed=None):
-        """
-        Returns None.
-        """
-        pop.sampled += 1
-        state = pop.state.copy()
-        state.seed = np.random.randint(1 << 60)  # TODO: Make reproducible? Modify state?
-        t0 = state.time  # Time
-
-        while True:
-            state, cstats = self.run_sweep_up(state, iface_high.param, sweeps=speriod, cseed=cseed)
-            elapsed = state.time - t0
-            param = cstats.v_in
-
-            if param >= iface_high.param:
-                npop = PopSample(param, pop, elapsed, state, cstats)
-                pop.up_times.append(elapsed)
-                iface_high.pops.append(npop)
-                return
-
-            if iface_low and param < iface_low.param:
-                pop.down_times.append(elapsed)
-                return
-
-            if elapsed > timeout:
-                pop.timeouts.append(elapsed)
-                return
+                f"  one cluster: V={cs.v_in} E={cs.e_in} Eout={cs.e_border} degs: {dgstr}\n")
 
     def sample_up_crosses(self,
                           pop0,
@@ -294,8 +207,7 @@ class CIsingFFSampler(FFSampler):
             its += 1
             state, cstats = self.run_sweep_up(state,
                                               np.inf if up else threshold,
-                                              sweeps=speriod,
-                                              cseed=self.cluster_seed)
+                                              sweeps=speriod)
             param = cstats.v_in
 
             if progress and its % 10 == 0:
@@ -331,3 +243,123 @@ class CIsingFFSampler(FFSampler):
                     print(pb)
                     pb.close()
                 return (up_to_up_times, npops)
+
+    def trace_pop(self,
+                  pop,
+                  iface_low,
+                  iface_high,
+                  timeout=100.0,
+                  speriod=0.1,
+                  min_samples=5,
+                  max_over_param=0.5):
+        """
+        Returns None.
+        """
+        pop.sampled += 1
+        state = pop.state.copy()
+        state.seed = np.random.randint(1 << 60)  # TODO: Make reproducible? Modify state?
+        t0 = state.time  # Time
+
+        while True:
+            state, cstats = self.run_sweep_up(state, iface_high.param, sweeps=speriod)
+            elapsed = state.time - t0
+            param = cstats.v_in
+
+            if param >= iface_high.param:
+                npop = PopSample(param, pop, elapsed, state, cstats)
+                pop.up_times.append(elapsed)
+                iface_high.pops.append(npop)
+                return
+
+            if iface_low and param < iface_low.param:
+                pop.down_times.append(elapsed)
+                return
+
+            if elapsed > timeout:
+                pop.timeouts.append(elapsed)
+                return
+
+
+class CIsingFFSampler(FFSampler):
+    "Base sampler using CIsing impl."
+
+    def __init__(self, graph, interfaces, state=None, **kwargs):
+        super().__init__(graph, interfaces, **kwargs)
+        if state is None:
+            state = IsingState(graph=graph)
+        self.start_pop = PopSample(0.0, None, 0.0, state, None)
+
+    def update_nodes(self, state, updates):
+        return state.mc_random_update(updates=updates)
+
+    def compute_param(self, state):
+        raise NotImplementedError("Use a subclass")
+
+    def run_sweep_up(self, s0, up, sweeps=0.1, up_accuracy=0.1):
+        """
+        Runs sim for `sweeps` and  
+        Assumes that state param is strictly below `up`.
+    
+        Returns (final_state, cluster_stats).
+        """
+        state = s0.copy()
+
+        ### Assert
+        cstats0 = self.compute_param(state)
+        if cstats0.v_in >= up:
+            print(f"  - run_sweep_up param {cstats0.v_in} not below up ({up}) at {s0}")
+
+        updates = max(1, int(sweeps * state.n))
+        self.update_nodes(state, updates=updates)
+        cstats = self.compute_param(state)
+        param = cstats.v_in
+        if param <= up + up_accuracy:
+            # Success
+            return (state, cstats)
+
+        # Param above up + up_accuracy -> do bisection
+        updates_hi = updates
+        updates_lo = 0
+        runs = 0
+        while True:
+            state = s0.copy()
+            updates = (updates_hi + updates_lo + 1) // 2
+
+            self.update_nodes(state, updates=updates)
+            cstats = self.compute_param(state)
+            param = cstats.v_in
+
+            if (param >= up and param <= up + up_accuracy) or (updates == updates_hi):
+                # Success or minimal step
+                return (state, cstats)
+            if param < up:
+                updates_lo = updates
+            if param > up + up_accuracy:
+                updates_hi = updates
+
+            runs += 1
+            assert runs < 250  # Bisection halving should never get here
+
+
+class CIsingClusterFFSampler(CIsingFFSampler):
+    "Sampler using largest cluster as the order parameter (optionally sampled)."
+
+    def compute_param(self, state):
+        return state.mc_max_cluster(samples=self.cluster_samples,
+                                    edge_prob=self.cluster_e_prob,
+                                    seed=self.cluster_seed)
+
+
+class CIsingSpinCountFFSampler(CIsingFFSampler):
+    "Sampler using up spin count as the order parameter."
+
+    def compute_param(self, state):
+        cs = ClusterStats(None, 1, cluster_mask=(state.spins + 1) // 2)
+        cs.v_in = state.count_spins(1)
+        # TODO: make non-fake
+        cs.v_in_border = 0
+        cs.v_out_border = 0
+        cs.e_in = 0
+        cs.e_border = 0
+        cs.relative_E = 0
+        return cs

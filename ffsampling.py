@@ -8,7 +8,7 @@ import plotly.graph_objs as go
 
 from gising import utils
 from gising.cising import IsingState, report_stats
-from gising.ff_sampler import CIsingFFSampler
+from gising.ff_sampler import CIsingClusterFFSampler, CIsingSpinCountFFSampler
 
 
 def main():
@@ -36,6 +36,12 @@ def main():
                         default=None,
                         type=int,
                         help="Cluster size samples to run.")
+    parser.add_argument('--count_spins',
+                        dest='sampler_class',
+                        action='store_const',
+                        const=CIsingSpinCountFFSampler,
+                        default=CIsingClusterFFSampler,
+                        help="Use spin count as the order param (rater than largest cluster size)")
     parser.add_argument(
         "--fix_cluster_seed",
         default=42,
@@ -79,7 +85,7 @@ def main():
     with utils.timed("create state"):
         state0 = IsingState(graph=g, T=args.T, F=args.F)
 
-    ff = CIsingFFSampler(
+    ff = args.sampler_class(
         g,
         Ifs,
         state=state0,

@@ -37,7 +37,7 @@ typedef struct {
 typedef struct {
     index_t n;           // Number of spins (vertices)
     spin_t *spins;       // Values of spins
-    double field;        // External dield
+    double field;        // External field
     double T;            // Temperature
     rand_t seed;         // Random seed. Modified with computation.
     index_t *neigh_list; // Neighbor lists for all vertices. Every list is -1 terminated.
@@ -76,13 +76,14 @@ Clustered {cising.cluster_count} nodes in {cising.cluster_ns * 1e-9:.3f}s ({cisi
 class ClusterStats(object):
 
     def __init__(self, ising_cluster_stats, value, divide=1.0, F=0.0, cluster_mask=None):
-        self.v_in = ising_cluster_stats.v_in / divide
-        self.v_in_border = ising_cluster_stats.v_in_border / divide
-        self.v_out_border = ising_cluster_stats.v_out_border / divide
-        self.e_in = ising_cluster_stats.e_in / divide
-        self.e_border = ising_cluster_stats.e_border / divide
+        if ising_cluster_stats:
+            self.v_in = ising_cluster_stats.v_in / divide
+            self.v_in_border = ising_cluster_stats.v_in_border / divide
+            self.v_out_border = ising_cluster_stats.v_out_border / divide
+            self.e_in = ising_cluster_stats.e_in / divide
+            self.e_border = ising_cluster_stats.e_border / divide
+            self.relative_E = -2.0 * F * self.v_in * value + 2.0 * self.e_border
         self.value = value
-        self.relative_E = -2.0 * F * self.v_in * value + 2.0 * self.e_border
         self.mask = cluster_mask
 
     def __repr__(self):
@@ -327,6 +328,10 @@ class IsingState(object):
                             F=self.F,
                             cluster_mask=out_mask,
                             divide=float(samples))
+
+    def count_spins(self, value=1):
+        "Return the number of spins with given value."
+        return (value * np.sum(self.spins) + self.n) // 2
 
     def get_hamiltonian(self):
         state = self._prepare_state()

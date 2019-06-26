@@ -18,6 +18,8 @@ def test():
     print(s.neigh_list)
     print(s.neigh_offset)
     print(s.degree)
+    assert s.count_spins(1) == 2
+    assert s.count_spins(-1) == 3
     stat = s.mc_max_cluster(value=-1)
     assert stat.v_in == 3
     assert stat.v_in_border == 2

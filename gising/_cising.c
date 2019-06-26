@@ -445,14 +445,13 @@ int main_test()
 
     ising_cluster_stats stats;
 
-    for (int i = 0; i < 100; i++) {
+    for (int i = 0; i < 20; i++) {
         index_t flips = ising_mc_sweep(&s, 1);
         index_t csize = ising_max_cluster_once(&s, -1, 1.0, &stats, NULL);
         assert(csize == stats.v_in);
         printf("Sweep: %d   flips: %d   stats: v_in=%d v_out_border=%d v_in_border=%d e_in=%d, e_border=%d\n",
                i, flips, stats.v_in, stats.v_out_border, stats.v_in_border, stats.e_in, stats.e_border);
     }
-
 
     return 0;
 }
