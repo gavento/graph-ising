@@ -90,7 +90,7 @@ class Interface:
 
 class FFSampler:
 
-    def __init__(self, graph, interfaces, min_pop_size=10, cluster_samples=1, cluster_e_prob=1.0):
+    def __init__(self, graph, interfaces, min_pop_size=10, cluster_samples=1, cluster_e_prob=1.0, cluster_seed=None):
         self.graph = graph
         self.min_pop_size = min_pop_size
         self.cross_A_samples = 2 * min_pop_size
@@ -103,6 +103,7 @@ class FFSampler:
         self.start_pop = None
         self.ifaceA = self.interfaces[0]
         self.ifaceB = self.interfaces[-1]
+        self.cluster_seed = cluster_seed
 
     def fill_interfaces(self, progress=False, timeout=100.0, tgt_samples=10, time_est=0.1):
         # Sample interface A
@@ -127,13 +128,12 @@ class FFSampler:
                                file=progress if progress is not True else sys.stderr)
             while len(iface.pops) < self.min_pop_size:
                 # Select clustering seed for this pop
-                cseed = np.random.randint(1 << 60)
                 pop = prev.get_random_pop(iface.param,
-                                          cseed=cseed,
+                                          cseed=self.cluster_seed,
                                           samples=self.cluster_samples,
                                           edge_prob=self.cluster_e_prob)
                 speriod = 0.05  # min(max(time_est / tgt_samples, 0.01), 0.1)
-                self.trace_pop(pop, bot, iface, timeout=timeout, speriod=speriod, cseed=cseed)
+                self.trace_pop(pop, bot, iface, timeout=timeout, speriod=speriod, cseed=self.cluster_seed)
                 if progress:
                     pb.update(len(iface.pops) - pb.n)
                     pb.set_postfix_str(
@@ -192,7 +192,7 @@ class CIsingFFSampler(FFSampler):
             print(f"  - run_sweep_up param {cstats0.v_in} not below up ({up}) at {s0}")
 
         updates = max(1, int(sweeps * state.n))
-        state.mc_sweep(sweeps=0, updates=updates)
+        state.mc_random_update(updates=updates)
         cstats = state.mc_max_cluster(samples=self.cluster_samples,
                                       edge_prob=self.cluster_e_prob,
                                       seed=cseed)
@@ -209,7 +209,7 @@ class CIsingFFSampler(FFSampler):
             state = s0.copy()
             updates = (updates_hi + updates_lo + 1) // 2
 
-            state.mc_sweep(sweeps=0, updates=updates)
+            state.mc_random_update(updates=updates)
             cstats = state.mc_max_cluster(samples=self.cluster_samples,
                                           edge_prob=self.cluster_e_prob,
                                           seed=cseed)
@@ -278,7 +278,6 @@ class CIsingFFSampler(FFSampler):
 
         state = pop0.state.copy()
         state.seed = np.random.randint(1 << 60)  # TODO: Make reproducible? Modify state?
-        cseed = state.seed
         t0 = state.time
         up = pop0.param >= threshold
         t_up = None
@@ -296,7 +295,7 @@ class CIsingFFSampler(FFSampler):
             state, cstats = self.run_sweep_up(state,
                                               np.inf if up else threshold,
                                               sweeps=speriod,
-                                              cseed=cseed)
+                                              cseed=self.cluster_seed)
             param = cstats.v_in
 
             if progress and its % 10 == 0:
@@ -308,7 +307,6 @@ class CIsingFFSampler(FFSampler):
                 # Reset to pop0
                 state = pop0.state.copy()
                 state.seed = np.random.randint(1 << 60)  # TODO: Make reproducible? Modify state?
-                cseed = state.seed
                 t0 = state.time
                 up = pop0.param >= threshold
                 t_up = None

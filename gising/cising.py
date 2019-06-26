@@ -302,9 +302,6 @@ class IsingState(object):
         If given, uses the given seed for sampling.
         """
 
-        # NOTE: HACK!!!
-        seed = 42
-
         assert self.neigh_list is not None
         samples = int(samples)
         assert samples >= 1

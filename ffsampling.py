@@ -36,6 +36,11 @@ def main():
                         default=None,
                         type=int,
                         help="Cluster size samples to run.")
+    parser.add_argument(
+        "--fix_cluster_seed",
+        default=42,
+        type=int,
+        help="Fix clustering seed (requires high -C for good results), 0 for random.")
     args = utils.init_experiment(parser)
     assert args.Imax is not None
 
@@ -74,12 +79,15 @@ def main():
     with utils.timed("create state"):
         state0 = IsingState(graph=g, T=args.T, F=args.F)
 
-    ff = CIsingFFSampler(g,
-                         Ifs,
-                         state=state0,
-                         min_pop_size=args.require_samples,
-                         cluster_e_prob=cluster_e_prob,
-                         cluster_samples=cluster_samples)
+    ff = CIsingFFSampler(
+        g,
+        Ifs,
+        state=state0,
+        min_pop_size=args.require_samples,
+        cluster_e_prob=cluster_e_prob,
+        cluster_samples=cluster_samples,
+        cluster_seed=args.fix_cluster_seed or None,
+    )
 
     try:
         ff.fill_interfaces(progress=tee.stderr, timeout=args.timeout)
