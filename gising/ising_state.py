@@ -71,6 +71,8 @@ class GraphIsingState(State):
         self.seed = state.seed
         self.spins_up = state.spins_up
         self.updates = state.updates
+        self._stats = None
+        self._order = state.spins_up
 
     def mc_updates(self, updates):
         """
@@ -109,7 +111,6 @@ class SpinCountIsingState(GraphIsingState):
         state = self._prepare_state()
         cising.update_until_spincount(state, low, high, int(timeout * self.n))
         self._update_from_state(state)
-        self.get_stats()
 
 
 class ClusterOrderIsingState(GraphIsingState):
@@ -121,6 +122,8 @@ class ClusterOrderIsingState(GraphIsingState):
 
     def update_until(self, low, high, high_tolerance=0.01, timeout=None, measure_every=1):
         "Run simulation until the order is `>=hi`, `<lo`, or for at most `timeout` MCSS."
+        self._stats = None
+        self._order = None
         raise NotImplementedError()
 
 

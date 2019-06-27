@@ -22,7 +22,7 @@ class State:
         self.updates = 0
 
     def __repr__(self):
-        return f"<{self.__class__.__name__} {self.n} spins order {self.order if self.order is not None else np.nan:.3g}>"
+        return f"<{self.__class__.__name__} {self.n} spins order {self._order if self._order is not None else np.nan:.3g}>"
 
     def copy(self):
         """

@@ -46,10 +46,9 @@ class FFSampler:
         for ino, iface in enumerate(self.interfaces):
             if ino == 0:
                 continue
-            self.sample_interface(iface,
-                                  prev=self.interfaces[ino - 1],
-                                  progress=progress,
-                                  timeout=timeout)
+
+            prev = self.interfaces[ino - 1]
+            self.sample_interface(iface, prev=prev, progress=progress, timeout=timeout)
 
             print(f"  done {ino}/{len(self.interfaces)}, rate {iface.rate:.3g}, " +
                   f"orders {stat_str([s.get_order() for s in iface.states], True)}")
@@ -136,12 +135,9 @@ class FFSampler:
                            file=progress if progress is not True else sys.stderr)
 
         while len(iface.states) < self.iface_samples:
-            if progress:
-                pb.set_postfix_str(f"{prev.s_up:>3}U {prev.s_down:>3}D {prev.s_timeout:>3}TO")
-                pb.update(len(iface.states) - pb.n)
-
             # Select clustering seed for this pop
             state = np.random.choice(prev.states).copy()
+            state.seed = np.random.randint(1 << 60)
             state.update_until(self.ifaceA.order, iface.order, timeout=timeout)
             if state.get_order() < self.ifaceA.order:
                 prev.s_down += 1
@@ -151,9 +147,29 @@ class FFSampler:
             else:
                 prev.s_timeout += 1
 
+            if progress:
+                pb.update(len(iface.states) - pb.n)
+                pb.set_postfix_str(f"{prev.s_up:>3}U {prev.s_down:>3}D {prev.s_timeout:>3}TO")
+
         if progress:
             pb.update(len(iface.states) - pb.n)
             pb.close()
             print(pb)
 
         iface.rate = prev.rate * prev.up_flow()
+
+    def critical_order_param(self):
+        last_r = self.interfaces[-1].rate
+        if last_r <= 0.0:
+            return None
+        for ino, iface in enumerate(self.interfaces):
+            if iface.rate < last_r * 2.0:
+                break
+        if ino == 0:
+            return 0.0
+        prev = self.interfaces[ino - 1]
+        # print(f"Locating {last_r * 2.0} in {prev.rate} .. {iface.rate} ({prev.order} .. {iface.order})")
+        la = np.log(prev.rate)
+        lx = np.log(last_r * 2.0)
+        lb = np.log(iface.rate)
+        return ((lx - la) * iface.order + (lb - lx) * prev.order) / (lb - la)

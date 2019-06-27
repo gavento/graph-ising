@@ -96,9 +96,13 @@ def main():
     except KeyboardInterrupt:
         print("\nInterrupted, trying to still report anything already computed ...")
 
-    print(f"FF cising stats:\n{report_runtime_stats()}")
+    print(f"FF cising stats:\n{report_runtime_stats()}\n")
 
-    print(f"Interface A at {ff.interfaces[0].order}, rate {ff.interfaces[0].rate:.3g}")
+    print(f"Interface A at {ff.interfaces[0].order}, rate {ff.interfaces[0].rate:.5g}")
+    print(f"Interface B at {ff.interfaces[-1].order}, rate {ff.interfaces[-1].rate:.5g}")
+    nucleus = ff.critical_order_param()
+    if nucleus is not None:
+        print(f"Critical nucleus size at {nucleus:.5g}")
 
     with utils.timed(f"write '{args.fbase + '.ffs.pickle'}'"):
         with open(args.fbase + '.ffs.pickle', 'wb') as f:

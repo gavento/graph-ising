@@ -175,8 +175,11 @@ inline index_t ising_mc_update(ising_state *s, index_t index)
             flipped = 1;
         }
     }
+
     if (flipped)
         s->spins_up += s->spins[index];
+    s->updates += 1;
+
     return flipped;
 }
 
