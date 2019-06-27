@@ -1,5 +1,5 @@
-import random
 import copy
+import random
 
 import attr
 import numpy as np

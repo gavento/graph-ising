@@ -7,8 +7,9 @@ import plotly
 import plotly.graph_objs as go
 
 from gising import utils
-from gising.ising_state import SpinCountIsingState, ClusterOrderIsingState, report_runtime_stats
 from gising.forward_flux import FFSampler
+from gising.ising_state import (ClusterOrderIsingState, SpinCountIsingState,
+                                report_runtime_stats)
 
 
 def main():
@@ -123,7 +124,7 @@ def main():
             apstat(Es, Es_std, es)
             # apstat(ECs, ECs_std, ces)
             if ino < len(ff.interfaces) - 1:
-                UPs.append(iface.up_flow() ** (1 / (ff.interfaces[ino + 1].order - iface.order)))
+                UPs.append(iface.up_flow()**(1 / (ff.interfaces[ino + 1].order - iface.order)))
             Rates.append(iface.rate)
 
     with utils.timed("plot"):
@@ -143,13 +144,12 @@ def main():
         ]
         layout = go.Layout(
             yaxis=dict(rangemode='tozero', autorange=True),
-            yaxis2=dict(
-                showticklabels=False,
-                overlaying='y',
-                side='left',
-                exponentformat='e',
-                type='log',
-                autorange=True),
+            yaxis2=dict(showticklabels=False,
+                        overlaying='y',
+                        side='left',
+                        exponentformat='e',
+                        type='log',
+                        autorange=True),
             yaxis3=dict(title='E', overlaying='y', side='right', autorange=True),
             title=
             f'FF sampling on {gname}, T={args.T:.3g}, F={args.F:.3g}, {args.require_samples} states/iface, {args.cluster_samples} clustering samples'

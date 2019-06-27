@@ -11,6 +11,7 @@ from .utils import stat_str
 class FFSampler:
     pass
 
+
 @attr.s
 class FFInterface:
     order = attr.ib(type=float)
@@ -29,10 +30,7 @@ class FFInterface:
 
 class FFSampler:
 
-    def __init__(self,
-                 init_states,
-                 interfaces,
-                 iface_samples=100):
+    def __init__(self, init_states, interfaces, iface_samples=100):
         self.init_states = init_states
         self.iface_samples = iface_samples
 
@@ -48,11 +46,13 @@ class FFSampler:
         for ino, iface in enumerate(self.interfaces):
             if ino == 0:
                 continue
-            self.sample_interface(iface, prev=self.interfaces[ino - 1], progress=progress, timeout=timeout)
+            self.sample_interface(iface,
+                                  prev=self.interfaces[ino - 1],
+                                  progress=progress,
+                                  timeout=timeout)
 
-            print(
-                f"  done {ino}/{len(self.interfaces)}, rate {iface.rate:.3g}, " +
-                f"orders {stat_str([s.get_order() for s in iface.states], True)}")
+            print(f"  done {ino}/{len(self.interfaces)}, rate {iface.rate:.3g}, " +
+                  f"orders {stat_str([s.get_order() for s in iface.states], True)}")
 
             # Report in-cluster degrees and other stats
             s = iface.states[0]
@@ -66,8 +66,7 @@ class FFSampler:
                 if mask[v] > 0:
                     dgc[d] += 1
             dgstr = ' '.join(f"{d}:{c}/{g}" for d, (g, c) in enumerate(zip(dgs, dgc)) if g > 0)
-            print(
-                f"  one cluster degs: {dgstr}")
+            print(f"  one cluster degs: {dgstr}")
 
     def sample_interface_A(self, progress, timeout):
         up_times = []
@@ -86,8 +85,7 @@ class FFSampler:
 
         while min(len(up_times), len(self.ifaceA.states)) < self.iface_samples:
             if progress:
-                pb.set_postfix_str(
-                    f"times {stat_str(up_times, True)}, {timeouts} timeouts")
+                pb.set_postfix_str(f"times {stat_str(up_times, True)}, {timeouts} timeouts")
                 pb.display()
 
             if state is None:
@@ -118,10 +116,10 @@ class FFSampler:
             t_up = state.updates
 
             self.ifaceA.states.append(state.copy())
-            
+
             if progress:
                 pb.update(min(len(up_times), len(self.ifaceA.states)) - pb.n)
-            
+
         self.ifaceA.rate = 1.0 / np.mean(up_times)
 
         if progress:
@@ -129,20 +127,17 @@ class FFSampler:
             pb.close()
             print(pb)
 
-
     def sample_interface(self, iface, prev, progress, timeout):
         if progress:
             pb = tqdm.tqdm(range(self.iface_samples),
-                            f"Iface {iface.order:8.3g}",
-                            dynamic_ncols=True,
-                            leave=False,
-                            file=progress if progress is not True else sys.stderr)
+                           f"Iface {iface.order:8.3g}",
+                           dynamic_ncols=True,
+                           leave=False,
+                           file=progress if progress is not True else sys.stderr)
 
         while len(iface.states) < self.iface_samples:
             if progress:
-                pb.set_postfix_str(
-                    f"{prev.s_up:>3}U {prev.s_down:>3}D {prev.s_timeout:>3}TO"
-                )
+                pb.set_postfix_str(f"{prev.s_up:>3}U {prev.s_down:>3}D {prev.s_timeout:>3}TO")
                 pb.update(len(iface.states) - pb.n)
 
             # Select clustering seed for this pop

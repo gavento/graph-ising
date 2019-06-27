@@ -1,8 +1,8 @@
 import networkx as nx
 import numpy as np
 
-from .state import Stats, State
 from .cising import cising, ffi
+from .state import State, Stats
 
 
 class GraphIsingState(State):
@@ -95,6 +95,7 @@ class GraphIsingState(State):
 class SpinCountIsingState(GraphIsingState):
 
     def get_order(self):
+        self._order = self.spins_up
         return self.spins_up
 
     def _compute_stats(self):
@@ -124,8 +125,10 @@ class ClusterOrderIsingState(GraphIsingState):
 
 
 def report_runtime_stats():
+
     def row(name, c, t):
         return f" {name:>30}: {c:>10}x in {t:8.3g}s ({c / max(t, 1e-32):8.3g} op/s)"
+
     return '\n'.join([
         row("Node updates", cising.update_count, cising.update_ns * 1e-9),
         row("Clustering node searches", cising.cluster_count, cising.cluster_ns * 1e-9),

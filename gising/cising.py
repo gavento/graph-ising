@@ -59,4 +59,5 @@ index_t update_until_spincount(ising_state *s, index_t low, index_t hi, uint64_t
     so_path = os.path.join(os.path.dirname(__file__), '_cising.so')
     cising = ffi.dlopen(so_path)
 
+
 load_ffi()
