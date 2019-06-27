@@ -7,8 +7,8 @@ import plotly
 import plotly.graph_objs as go
 
 from gising import utils
-from gising.cising import IsingState, report_stats
-from gising.ff_sampler import CIsingClusterFFSampler, CIsingSpinCountFFSampler
+from gising.ising_state import SpinCountIsingState, ClusterOrderIsingState, report_runtime_stats
+from gising.forward_flux import FFSampler
 
 
 def main():
@@ -25,9 +25,9 @@ def main():
                         default=10,
                         type=int,
                         help="Samples required at interface.")
-    parser.add_argument("--Is", default=10, type=int, help="Interfaces to use.")
-    parser.add_argument("--Imin", default=0, type=float, help="Min. interface.")
-    parser.add_argument("--Imax", default=None, type=float, help="Max interface.")
+    parser.add_argument("--Is", "-I", default=100, type=int, help="Interfaces to use.")
+    parser.add_argument("--Imin", default=None, type=float, help="Interface A order param.")
+    parser.add_argument("--Imax", default=None, type=float, help="Interface B order param.")
     parser.add_argument("-T", default=1.0, type=float, help="Temperature.")
     parser.add_argument("-F", default=0.0, type=float, help="Field.")
     parser.add_argument("--timeout", default=100.0, type=float, help="One sim timeout.")
@@ -37,17 +37,18 @@ def main():
                         type=int,
                         help="Cluster size samples to run.")
     parser.add_argument('--count_spins',
-                        dest='sampler_class',
                         action='store_const',
-                        const=CIsingSpinCountFFSampler,
-                        default=CIsingClusterFFSampler,
+                        const=True,
+                        default=False,
                         help="Use spin count as the order param (rater than largest cluster size)")
     parser.add_argument(
         "--fix_cluster_seed",
         default=42,
         type=int,
         help="Fix clustering seed (requires high -C for good results), 0 for random.")
+
     args = utils.init_experiment(parser)
+    assert args.Imin is not None
     assert args.Imax is not None
 
     tee = utils.Tee(args.logfile)
@@ -57,11 +58,9 @@ def main():
         if args.grid is not None:
             gname = f"2D toroid grid {args.grid}x{args.grid}"
             g = nx.grid_2d_graph(args.grid, args.grid, periodic=True)
-            g = nx.relabel.convert_node_labels_to_integers(g, ordering='sorted')
         elif args.grid3d is not None:
             gname = f"3D toroid grid {args.grid3d}x{args.grid3d}x{args.grid3d}"
             g = nx.generators.lattice.grid_graph([args.grid3d] * 3, periodic=True)
-            g = nx.relabel.convert_node_labels_to_integers(g, ordering='sorted')
         elif args.pref is not None:
             gname = f"Bar.-Alb. pref. att. graph {args.pref}"
             n, m = args.pref.split(",")
@@ -72,38 +71,35 @@ def main():
             f"Created graph with {g.order()} nodes, {g.size()} edges, degrees {utils.stat_str([g.degree(v) for v in g.nodes], True)}"
         )
 
-    Ifs = sorted(set(np.linspace(args.Imin, args.Imax, args.Is, dtype=int)))
-    print("Interfaces: {}".format(Ifs))
+    ifs = sorted(set(np.linspace(args.Imin, args.Imax, args.Is, dtype=int)))
+    print("Interfaces: {}".format(ifs))
 
-    # p_drop = exp(-2 J / (K_B * T))
-    cluster_e_prob = 1.0 - np.exp(-2.0 / args.T)
-    cluster_samples = args.cluster_samples
-    if args.cluster_samples is None:
-        cluster_samples = 1
-        cluster_e_prob = 1.0
+    # cluster_e_prob = 1.0 - np.exp(-2.0 / args.T)
+    # cluster_samples = args.cluster_samples
+    # if args.cluster_samples is None:
+    #     cluster_samples = 1
+    #     cluster_e_prob = 1.0
 
     with utils.timed("create state"):
-        state0 = IsingState(graph=g, T=args.T, F=args.F)
+        if args.count_spins:
+            state0 = SpinCountIsingState(g, T=args.T, F=args.F)
+        else:
+            raise NotImplementedError()
+            # TODO: Special clustering options will go here
+            state0 = ClusterOrderIsingState(g, T=args.T, F=args.F)
 
-    ff = args.sampler_class(
-        g,
-        Ifs,
-        state=state0,
-        min_pop_size=args.require_samples,
-        cluster_e_prob=cluster_e_prob,
-        cluster_samples=cluster_samples,
-        cluster_seed=args.fix_cluster_seed or None,
-    )
+    ff = FFSampler([state0], ifs, iface_samples=args.require_samples)
 
     try:
-        ff.fill_interfaces(progress=tee.stderr, timeout=args.timeout)
+        ff.compute(progress=tee.stderr, timeout=args.timeout)
     except KeyboardInterrupt:
         print("\nInterrupted, trying to still report anything already computed ...")
-    print(f"FF cising stats:\n{report_stats()}")
 
-    print(f"Firts interface at {ff.interfaces[0].param}, rate {ff.interfaces[0].rate:.3g}")
+    print(f"FF cising stats:\n{report_runtime_stats()}")
 
-    with utils.timed(f"write '{args.fbase + '-FF.pickle'}'"):
+    print(f"Interface A at {ff.interfaces[0].order}, rate {ff.interfaces[0].rate:.3g}")
+
+    with utils.timed(f"write '{args.fbase + '.ffs.pickle'}'"):
         with open(args.fbase + '.ffs.pickle', 'wb') as f:
             pickle.dump(ff, f)
 
@@ -120,21 +116,19 @@ def main():
     with utils.timed("stats"):
         for ino, iface in enumerate(ff.interfaces):
             es = []
-            ces = []
-            for p in iface.pops:
-                es.append(p.state.get_hamiltonian())
-                ces.append(p.cluster_stats.relative_E)
+            for s in iface.states:
+                es.append(s.get_hamiltonian())
 
-            Xs.append(iface.param)
+            Xs.append(iface.order)
             apstat(Es, Es_std, es)
-            apstat(ECs, ECs_std, ces)
+            # apstat(ECs, ECs_std, ces)
             if ino < len(ff.interfaces) - 1:
-                UPs.append(iface.normalized_upflow(ff.interfaces[ino + 1].param - iface.param))
+                UPs.append(iface.up_flow() ** (1 / (ff.interfaces[ino + 1].order - iface.order)))
             Rates.append(iface.rate)
 
     with utils.timed("plot"):
         data = [
-            go.Scatter(x=Xs, y=UPs, yaxis='y1', name="Up probability (normed to param)"),
+            go.Scatter(x=Xs, y=UPs, yaxis='y1', name="Up probability [per 1 order]"),
             go.Scatter(x=Xs, y=Rates, yaxis='y2', name="Visit rate (up) [sweeps]"),
             go.Scatter(x=Xs,
                        y=Es,
@@ -153,10 +147,7 @@ def main():
                 showticklabels=False,
                 overlaying='y',
                 side='left',
-                #anchor='free',
-                #position=0.05,
                 exponentformat='e',
-                #tickformat='~.3g',
                 type='log',
                 autorange=True),
             yaxis3=dict(title='E', overlaying='y', side='right', autorange=True),

@@ -17,6 +17,9 @@ typedef uint64_t rand_t;
 typedef int32_t index_t;
 typedef int8_t spin_t;
 
+/*
+ * Global counters, used for stats.
+ */
 uint64_t update_ns = 0;
 uint64_t update_count = 0;
 uint64_t cluster_ns = 0;
@@ -99,6 +102,8 @@ typedef struct {
     double field;        // External dield
     double T;            // Temperature
     rand_t seed;         // Random seed. Modified with computation.
+    index_t spins_up;    // Number of +1 spins (can be absolute or relative, updated only +-1).
+    index_t updates;     // Attempted spin updates
     index_t *neigh_list; // Neighbor lists for all vertices. Every list is degree[v] long.
     index_t *neigh_offset; // For every node starting offset in neigh_list
     index_t *degree;     // Node degrees (informational)
@@ -167,6 +172,8 @@ inline index_t ising_mc_update(ising_state *s, index_t index)
             flipped = 1;
         }
     }
+    if (flipped)
+        s->spins_up += s->spins[index];
     return flipped;
 }
 
@@ -240,6 +247,27 @@ index_t ising_mc_sweep_partial(ising_state *s, index_t updates)
     STOP_TIMER(update, updates);
     return flipped;
 }
+
+/*
+ * Updates a random spin until the up spins are <low, >=hi or timeout updates have been attempted.
+ * Returns the number of flipped spins.
+ */
+index_t update_until_spincount(ising_state *s, index_t low, index_t hi, uint64_t timeout)
+{
+    START_TIMER();
+    index_t flipped = 0;
+    uint64_t i;
+    for (i = 0; i < timeout; i++) {
+        if (s->spins_up < low || s->spins_up >= hi)
+            break;
+
+        index_t spin = get_rand(&s->seed) % s->n;
+        flipped += ising_mc_update(s, spin);
+    }
+    STOP_TIMER(update, i);
+    return flipped;
+}
+
 
 
 /*
