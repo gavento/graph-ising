@@ -207,5 +207,6 @@ def main():
                             auto_open=False,
                             include_plotlyjs='directory')
 
+    print(f"Log in '{args.fbase + '.log'}'")
 
 main()
