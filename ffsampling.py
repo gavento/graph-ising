@@ -1,3 +1,4 @@
+import bz2
 import itertools
 import json
 import pickle
@@ -102,56 +103,67 @@ def main():
     ff = FFSampler([state0], ifs, iface_samples=args.require_samples)
 
     try:
-        ff.compute(progress=tee.stderr, timeout=args.timeout)
-        d = dict(
-            name=args.full_name,
-            LambdaA=int(ff.interfaces[0].order),
-            RateA=ff.interfaces[0].rate,
-            LambdaB=int(ff.interfaces[-1].order),
-            RateB=ff.interfaces[-1].rate,
-            CSize=ff.critical_order_param(),
-            T=args.T,
-            F=args.F,
-            GName=gname,
-            Param='UpSpins' if args.count_spins else 'UpCluster',
-            Samples=args.require_samples,
-            N=g.order(),
-            M=g.size(),
-            p=float(p) if args.pcg is not None else -1,
+        with utils.timed(f"FF compute"):
+            ff.compute(progress=tee.stderr, timeout=args.timeout)
 
-            Edges=list(g.edges()),
-            Orders=[int(iface.order) for iface in ff.interfaces],
-            Clusters=[[[int(x) for x in s.get_stats().mask] for s in iface.states] for iface in ff.interfaces],
-            Rates=[iface.rate for iface in ff.interfaces],
-            )
-        with open(args.fbase+'.json', 'wt') as jf:
-            json.dump(d, jf)
+        with utils.timed(f"write '{args.fbase + '.json.bz2'}'"):
+            d = dict(
+                Name=args.full_name,
+                Comment=args.comment,
+                LambdaA=int(ff.interfaces[0].order),
+                RateA=ff.interfaces[0].rate,
+                LambdaB=int(ff.interfaces[-1].order),
+                RateB=ff.interfaces[-1].rate,
+                CSize=ff.critical_order_param(),
+                T=args.T,
+                F=args.F,
+                GName=gname,
+                Param='UpSpins' if args.count_spins else 'UpCluster',
+                Samples=args.require_samples,
+                N=g.order(),
+                M=g.size(),
+                p=float(p) if args.pcg is not None else -1,
+
+                Edges=list(g.edges()),
+                Orders=[int(iface.order) for iface in ff.interfaces],
+                Clusters=[[int(x) for x in iface.states[0].get_stats().mask] for iface in ff.interfaces],
+                Rates=[iface.rate for iface in ff.interfaces],
+                )
+            with bz2.BZ2File(args.fbase+'.json.bz2', 'w') as jf:
+                jf.write(json.dumps(d).encode('utf-8'))
+
+        with utils.timed(f"write '{args.fbase + '.ffs.pickle.bz2'}'"):
+            with bz2.BZ2File(args.fbase + '.ffs.pickle.bz2', 'w') as f:
+                pickle.dump(ff, f)
+
     except KeyboardInterrupt:
         print("\nInterrupted, trying to still report anything already computed ...")
 
-    print(f"FF cising stats:\n{report_runtime_stats()}\n")
+    ### Reports
 
+    print(f"FF cising stats:\n{report_runtime_stats()}")
+
+    print()
     print(f"Interface A at {ff.interfaces[0].order}, rate {ff.interfaces[0].rate:.5g}")
     print(f"Interface B at {ff.interfaces[-1].order}, rate {ff.interfaces[-1].rate:.5g}")
     nucleus = ff.critical_order_param()
     if nucleus is not None:
         print(f"Critical nucleus size at {nucleus:.5g}")
+    print()
 
-    with utils.timed(f"write '{args.fbase + '.ffs.pickle'}'"):
-        with open(args.fbase + '.ffs.pickle', 'wb') as f:
-            pickle.dump(ff, f)
+    ### Graph drawing
 
-    Xs = []
-    Es, Es_std = [], []
-    ECs, ECs_std = [], []
-    UPs = []
-    Rates = []
+    with utils.timed(f"Ploting {args.fbase + '.html'}"):
+        Xs = []
+        Es, Es_std = [], []
+        ECs, ECs_std = [], []
+        UPs = []
+        Rates = []
 
-    def apstat(mean, std, vals):
-        mean.append(np.mean(vals))
-        std.append(np.std(vals))
+        def apstat(mean, std, vals):
+            mean.append(np.mean(vals))
+            std.append(np.std(vals))
 
-    with utils.timed("stats"):
         for ino, iface in enumerate(ff.interfaces):
             es = []
             for s in iface.states:
@@ -164,7 +176,6 @@ def main():
                 UPs.append(iface.up_flow()**(1 / (ff.interfaces[ino + 1].order - iface.order)))
             Rates.append(iface.rate)
 
-    with utils.timed("plot"):
         data = [
             go.Scatter(x=Xs, y=UPs, yaxis='y1', name="Up probability [per 1 order]"),
             go.Scatter(x=Xs, y=Rates, yaxis='y2', name="Visit rate (up) [sweeps]"),
@@ -195,7 +206,6 @@ def main():
                             filename=args.fbase + '.html',
                             auto_open=False,
                             include_plotlyjs='directory')
-        print(f"Wrote {args.fbase + '.html'}")
 
 
 main()
