@@ -1,4 +1,5 @@
 import itertools
+import json
 import pickle
 
 import networkx as nx
@@ -21,6 +22,11 @@ def main():
                         type=str,
                         metavar="N,M",
                         help="Use Barabasi-Albert grap on N vertices with M attachments.")
+    parser.add_argument("--pcg",
+                        default=None,
+                        type=str,
+                        metavar="N,M,p",
+                        help="Use Powerlaw-cluster graph on N vertices with M attachments and p triangle prob.")
     parser.add_argument("--require_samples",
                         "-s",
                         default=10,
@@ -63,9 +69,13 @@ def main():
             gname = f"3D toroid grid {args.grid3d}x{args.grid3d}x{args.grid3d}"
             g = nx.generators.lattice.grid_graph([args.grid3d] * 3, periodic=True)
         elif args.pref is not None:
-            gname = f"Bar.-Alb. pref. att. graph {args.pref}"
+            gname = f"B-A pref. att. graph {args.pref}"
             n, m = args.pref.split(",")
             g = nx.random_graphs.barabasi_albert_graph(int(n), int(m))
+        elif args.pcg is not None:
+            gname = f"Powerlaw-cluster graph {args.pcg}"
+            n, m, p = args.pcg.split(",")
+            g = nx.random_graphs.powerlaw_cluster_graph(int(n), int(m), float(p))
         else:
             raise Exception("Graph type required")
         print(
@@ -93,6 +103,29 @@ def main():
 
     try:
         ff.compute(progress=tee.stderr, timeout=args.timeout)
+        d = dict(
+            name=args.full_name,
+            LambdaA=int(ff.interfaces[0].order),
+            RateA=ff.interfaces[0].rate,
+            LambdaB=int(ff.interfaces[-1].order),
+            RateB=ff.interfaces[-1].rate,
+            CSize=ff.critical_order_param(),
+            T=args.T,
+            F=args.F,
+            GName=gname,
+            Param='UpSpins' if args.count_spins else 'UpCluster',
+            Samples=args.require_samples,
+            N=g.order(),
+            M=g.size(),
+            p=float(p) if args.pcg is not None else -1,
+
+            Edges=list(g.edges()),
+            Orders=[int(iface.order) for iface in ff.interfaces],
+            Clusters=[[[int(x) for x in s.get_stats().mask] for s in iface.states] for iface in ff.interfaces],
+            Rates=[iface.rate for iface in ff.interfaces],
+            )
+        with open(args.fbase+'.json', 'wt') as jf:
+            json.dump(d, jf)
     except KeyboardInterrupt:
         print("\nInterrupted, trying to still report anything already computed ...")
 
