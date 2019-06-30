@@ -33,8 +33,8 @@ def init_experiment(parser):
 
     if args.name is None:
         args.name = os.path.splitext(sys.argv[0])[0]
-    args.full_name = (args.name + '-' + datetime.datetime.now().strftime("%Y%m%d-%H%M%S") +
-                      (('-' + args.comment) if args.comment else ''))
+    args.full_name = (f"{args.name}-{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-" +
+                      f"{os.getpid():08}-{args.comment}").rstrip('-')
     args.fbase = os.path.join(args.logdir, args.full_name)
     os.makedirs(args.logdir, exist_ok=True)
     args.logfile = args.fbase + '.log'
