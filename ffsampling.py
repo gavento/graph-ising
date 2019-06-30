@@ -104,7 +104,7 @@ def main():
 
     try:
         with utils.timed(f"FF compute"):
-            ff.compute(progress=tee.stderr, timeout=args.timeout)
+            ff.compute(progress=args.progress and tee.stderr, timeout=args.timeout)
 
         with utils.timed(f"write '{args.fbase + '.json.bz2'}'"):
             d = dict(

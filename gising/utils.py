@@ -25,6 +25,7 @@ def default_parser():
     parser.add_argument("--comment", "-c", default=None, type=str, help="Comment for this run.")
     parser.add_argument("--logdir", default="logs", type=str, help="Path to output dir.")
     parser.add_argument("--name", default=None, type=str, help="Main name (default: script name).")
+    parser.add_argument("--progress", "-p", default=False, action='store_true', help="Show progress bars.")
     return parser
 
 
