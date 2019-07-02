@@ -16,6 +16,7 @@ from gising.ising_state import (ClusterOrderIsingState, SpinCountIsingState,
 
 def main():
     parser = utils.default_parser()
+    parser.add_argument("--graphml", default=None, type=str, help="Use given GraphML file.")
     parser.add_argument("--grid", default=None, type=int, help="Use 2D toroidal grid NxN.")
     parser.add_argument("--grid3d", default=None, type=int, help="Use 3D toroidal grid NxNxN.")
     parser.add_argument("--pref",
@@ -77,11 +78,16 @@ def main():
             gname = f"Powerlaw-cluster graph {args.pcg}"
             n, m, p = args.pcg.split(",")
             g = nx.random_graphs.powerlaw_cluster_graph(int(n), int(m), float(p))
+        elif args.graphml is not None:
+            gname = f"File {args.graphml}"
+            g = nx.read_graphml(args.graphml)
+            g = nx.convert_node_labels_to_integers(g, ordering='sorted')
         else:
             raise Exception("Graph type required")
         print(
             f"Created graph with {g.order()} nodes, {g.size()} edges, degrees {utils.stat_str([g.degree(v) for v in g.nodes], True)}"
         )
+    nx.write_graphml(g, args.fbase + '.graphml')
 
     ifs = sorted(set(np.linspace(args.Imin, args.Imax, args.Is, dtype=int)))
     print("Interfaces: {}".format(ifs))

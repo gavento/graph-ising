@@ -39,7 +39,7 @@ class FFSampler:
         ]
         self.ifaceA = self.interfaces[0]
 
-    def compute(self, progress=True, timeout=100.0):
+    def compute(self, progress=True, report_degs=False, timeout=100.0):
         self.sample_interface_A(progress=progress, timeout=timeout)
         print(f"Rate at iface A ({self.ifaceA.order}) is {self.ifaceA.rate:.3g} ups/MCSS/spin")
 
@@ -54,18 +54,19 @@ class FFSampler:
                   f"orders {stat_str([s.get_order() for s in iface.states], True)}")
 
             # Report in-cluster degrees and other stats
-            s = iface.states[0]
-            mask = s.get_stats().mask
+            if report_degs:
+                s = iface.states[0]
+                mask = s.get_stats().mask
 
-            dgs = [0] * s.graph.size()
-            dgc = [0] * s.graph.size()
-            for v in range(s.n):
-                d = s.graph.degree(v)
-                dgs[d] += 1
-                if mask[v] > 0:
-                    dgc[d] += 1
-            dgstr = ' '.join(f"{d}:{c}/{g}" for d, (g, c) in enumerate(zip(dgs, dgc)) if g > 0)
-            print(f"  one cluster degs: {dgstr}")
+                dgs = [0] * s.graph.size()
+                dgc = [0] * s.graph.size()
+                for v in range(s.n):
+                    d = s.graph.degree(v)
+                    dgs[d] += 1
+                    if mask[v] > 0:
+                        dgc[d] += 1
+                dgstr = ' '.join(f"{d}:{c}/{g}" for d, (g, c) in enumerate(zip(dgs, dgc)) if g > 0)
+                print(f"  one cluster degs: {dgstr}")
 
     def sample_interface_A(self, progress, timeout):
         up_times = []
