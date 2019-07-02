@@ -74,7 +74,7 @@ class FFSampler:
 
         if progress:
             pb = tqdm.tqdm(range(self.iface_samples),
-                           f"Iface A ({a:.3g}) rate",
+                           f"Iface A ({a:.2f}) rate",
                            dynamic_ncols=True,
                            leave=False,
                            file=progress if progress is not True else sys.stderr)
@@ -85,7 +85,7 @@ class FFSampler:
 
         while min(len(up_times), len(self.ifaceA.states)) < self.iface_samples:
             if progress:
-                pb.set_postfix_str(f"times {stat_str(up_times, True)}, {timeouts} timeouts")
+                pb.set_postfix_str(f"times {stat_str(up_times, True)}, {timeouts} TOs")
                 pb.display()
 
             if state is None:
@@ -130,7 +130,7 @@ class FFSampler:
     def sample_interface(self, iface, prev, progress, timeout):
         if progress:
             pb = tqdm.tqdm(range(self.iface_samples),
-                           f"Iface {iface.order:8.3g}",
+                           f"Iface {iface.order:8.2f}",
                            dynamic_ncols=True,
                            leave=False,
                            file=progress if progress is not True else sys.stderr)

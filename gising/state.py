@@ -3,6 +3,7 @@ import random
 
 import attr
 import numpy as np
+import tqdm
 
 
 @attr.s
@@ -51,3 +52,18 @@ class State:
     def update_until(self, low, high, high_tolerance=0.01, timeout=None, measure_every=1):
         "Run simulation until the order is `>=hi`, `<lo`, or for at most `timeout` MCSS."
         raise NotImplementedError()
+
+    def sample_mesostable(self, progress=True, time=200, samples=100, trials=5):
+        r = range(trials)
+        if progress:
+            r = tqdm.tqdm(r,
+                          "Sampling mesostable",
+                          file=progress if progress is not True else sys.stderr)
+        spl = np.zeros((trials, samples))
+        for ti in r:
+            state = self.copy()
+            state.seed = np.random.randint(1 << 60)
+            for si in range(samples):
+                state.mc_updates(max(int(time / samples * state.n), 1))
+                spl[ti, si] = state.get_order()
+        return spl

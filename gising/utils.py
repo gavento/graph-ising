@@ -9,7 +9,7 @@ import types
 import numpy as np
 
 
-def stat_str(xs, minmax=False, prec=2):
+def stat_str(xs, minmax=False, prec=3):
     if isinstance(xs, types.GeneratorType):
         xs = np.array(xs)
     if len(xs) == 0:

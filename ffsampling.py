@@ -7,6 +7,8 @@ import networkx as nx
 import numpy as np
 import plotly
 import plotly.graph_objs as go
+import scipy as sp
+import scipy.stats
 
 from gising import utils
 from gising.forward_flux import FFSampler
@@ -57,8 +59,6 @@ def main():
         help="Fix clustering seed (requires high -C for good results), 0 for random.")
 
     args = utils.init_experiment(parser)
-    assert args.Imin is not None
-    assert args.Imax is not None
 
     tee = utils.Tee(args.logfile)
     tee.start()
@@ -89,9 +89,6 @@ def main():
         )
     nx.write_graphml(g, args.fbase + '.graphml')
 
-    ifs = sorted(set(np.linspace(args.Imin, args.Imax, args.Is, dtype=int)))
-    print("Interfaces: {}".format(ifs))
-
     # cluster_e_prob = 1.0 - np.exp(-2.0 / args.T)
     # cluster_samples = args.cluster_samples
     # if args.cluster_samples is None:
@@ -105,6 +102,31 @@ def main():
             raise NotImplementedError()
             # TODO: Special clustering options will go here
             state0 = ClusterOrderIsingState(g, T=args.T, F=args.F)
+        state1 = state0.copy()
+        state1.spins[:] = 1
+        state1.spins_up = state1.n
+
+    if args.Imin is None:
+        with utils.timed("sample mesostable for iface A"):
+            spl = state0.sample_mesostable(progress=args.progress and tee.stderr)
+            spl = spl[:, (spl.shape[1] * 2 // 3):]
+            args.Imin = int(sp.stats.norm.ppf(1 - 1e-3, loc=np.mean(spl), scale=np.std(spl)))
+            print(f"Selected LambdaA={args.Imin} based on {utils.stat_str(spl, True, prec=5)}")
+            if args.Imax is not None and args.Imin >= args.Imax:
+                raise Exception("Mesostable(-1) upper-limit above target order - divergent process or above crit. temp.?")
+
+    if args.Imax is None:
+        with utils.timed("sample mesostable for iface B"):
+            spl = state1.sample_mesostable(progress=args.progress and tee.stderr)
+            spl = spl[:, (spl.shape[1] * 2 // 3):]
+            args.Imax = int(sp.stats.norm.ppf(1e-10, loc=np.mean(spl), scale=np.std(spl)))
+            print(f"Selected LambdaB={args.Imax} based on {utils.stat_str(spl, True, prec=5)}")
+            if args.Imin >= args.Imax:
+                raise Exception("Mesostable(+1) lower-limit below LambdaA - above crit. temp.?")
+
+
+    ifs = sorted(set(np.linspace(args.Imin, args.Imax, args.Is, dtype=int)))
+    print(f"Interfaces: {np.array(ifs)[:20]} ...")
 
     ff = FFSampler([state0], ifs, iface_samples=args.require_samples)
 
