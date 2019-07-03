@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 import bz2
 import itertools
 import json
@@ -12,46 +14,46 @@ import scipy.stats
 
 from gising import utils
 from gising.forward_flux import FFSampler
-from gising.ising_state import (ClusterOrderIsingState, SpinCountIsingState,
-                                report_runtime_stats)
+from gising.ising_state import (ClusterOrderIsingState, SpinCountIsingState, report_runtime_stats)
 
 
 def main():
     parser = utils.default_parser()
-    parser.add_argument("--graphml", default=None, type=str, help="Use given GraphML file.")
-    parser.add_argument("--grid", default=None, type=int, help="Use 2D toroidal grid NxN.")
-    parser.add_argument("--grid3d", default=None, type=int, help="Use 3D toroidal grid NxNxN.")
-    parser.add_argument("--pref",
-                        default=None,
-                        type=str,
-                        metavar="N,M",
-                        help="Use Barabasi-Albert grap on N vertices with M attachments.")
-    parser.add_argument("--pcg",
-                        default=None,
-                        type=str,
-                        metavar="N,M,p",
-                        help="Use Powerlaw-cluster graph on N vertices with M attachments and p triangle prob.")
-    parser.add_argument("--require_samples",
+    parser.add_argument("graph", metavar="GRAPHML", type=str, help="Use given GraphML file.")
+    parser.add_argument("--samples",
                         "-s",
                         default=10,
                         type=int,
-                        help="Samples required at interface.")
-    parser.add_argument("--Is", "-I", default=100, type=int, help="Interfaces to use.")
-    parser.add_argument("--Imin", default=None, type=float, help="Interface A order param.")
-    parser.add_argument("--Imax", default=None, type=float, help="Interface B order param.")
+                        help="Samples required at each interface.")
+    parser.add_argument("--Is",
+                        "-I",
+                        default=None,
+                        type=int,
+                        help="Interfaces to use (default: dynamic).")
+    parser.add_argument("--Imin",
+                        default=None,
+                        type=float,
+                        help="Interface A order param (default: from mesostable).")
+    parser.add_argument("--Imax",
+                        default=None,
+                        type=float,
+                        help="Interface B order param (default: from mesostable).")
     parser.add_argument("-T", default=1.0, type=float, help="Temperature.")
     parser.add_argument("-F", default=0.0, type=float, help="Field.")
-    parser.add_argument("--timeout", default=100.0, type=float, help="One sim timeout.")
+    parser.add_argument("--timeout",
+                        default=10000.0,
+                        type=float,
+                        help="One simulation run timeout (in MC sweeps).")
     parser.add_argument("--cluster_samples",
                         "-C",
                         default=None,
                         type=int,
                         help="Cluster size samples to run.")
     parser.add_argument('--count_spins',
-                        action='store_const',
-                        const=True,
+                        '-S',
+                        action='store_true',
                         default=False,
-                        help="Use spin count as the order param (rater than largest cluster size)")
+                        help="Use spin count as the order param (default: largest cluster size)")
     parser.add_argument(
         "--fix_cluster_seed",
         default=42,
@@ -63,37 +65,8 @@ def main():
     tee = utils.Tee(args.logfile)
     tee.start()
 
-    with utils.timed("create graph"):
-        if args.grid is not None:
-            gname = f"2D toroid grid {args.grid}x{args.grid}"
-            g = nx.grid_2d_graph(args.grid, args.grid, periodic=True)
-        elif args.grid3d is not None:
-            gname = f"3D toroid grid {args.grid3d}x{args.grid3d}x{args.grid3d}"
-            g = nx.generators.lattice.grid_graph([args.grid3d] * 3, periodic=True)
-        elif args.pref is not None:
-            gname = f"B-A pref. att. graph {args.pref}"
-            n, m = args.pref.split(",")
-            g = nx.random_graphs.barabasi_albert_graph(int(n), int(m))
-        elif args.pcg is not None:
-            gname = f"Powerlaw-cluster graph {args.pcg}"
-            n, m, p = args.pcg.split(",")
-            g = nx.random_graphs.powerlaw_cluster_graph(int(n), int(m), float(p))
-        elif args.graphml is not None:
-            gname = f"File {args.graphml}"
-            g = nx.read_graphml(args.graphml)
-            g = nx.convert_node_labels_to_integers(g, ordering='sorted')
-        else:
-            raise Exception("Graph type required")
-        print(
-            f"Created graph with {g.order()} nodes, {g.size()} edges, degrees {utils.stat_str([g.degree(v) for v in g.nodes], True)}"
-        )
-    nx.write_graphml(g, args.fbase + '.graphml')
-
-    # cluster_e_prob = 1.0 - np.exp(-2.0 / args.T)
-    # cluster_samples = args.cluster_samples
-    # if args.cluster_samples is None:
-    #     cluster_samples = 1
-    #     cluster_e_prob = 1.0
+    with utils.timed(f"reading graph '{args.graph}'"):
+        g = nx.read_graphml(args.graph)
 
     with utils.timed("create state"):
         if args.count_spins:
@@ -102,21 +75,22 @@ def main():
             raise NotImplementedError()
             # TODO: Special clustering options will go here
             state0 = ClusterOrderIsingState(g, T=args.T, F=args.F)
-        state1 = state0.copy()
-        state1.spins[:] = 1
-        state1.spins_up = state1.n
 
     if args.Imin is None:
         with utils.timed("sample mesostable for iface A"):
             spl = state0.sample_mesostable(progress=args.progress and tee.stderr)
             spl = spl[:, (spl.shape[1] * 2 // 3):]
-            args.Imin = int(sp.stats.norm.ppf(1 - 1e-3, loc=np.mean(spl), scale=np.std(spl)))
+            args.Imin = int(sp.stats.norm.ppf(1 - 1e-4, loc=np.mean(spl), scale=np.std(spl)))
             print(f"Selected LambdaA={args.Imin} based on {utils.stat_str(spl, True, prec=5)}")
             if args.Imax is not None and args.Imin >= args.Imax:
-                raise Exception("Mesostable(-1) upper-limit above target order - divergent process or above crit. temp.?")
+                raise Exception(
+                    "Mesostable(-1) upper-limit above target order - divergent process or above crit. temp.?"
+                )
 
     if args.Imax is None:
         with utils.timed("sample mesostable for iface B"):
+            state1 = state0.copy()
+            state1.set_spins(np.ones(state1.n))
             spl = state1.sample_mesostable(progress=args.progress and tee.stderr)
             spl = spl[:, (spl.shape[1] * 2 // 3):]
             args.Imax = int(sp.stats.norm.ppf(1e-10, loc=np.mean(spl), scale=np.std(spl)))
@@ -124,15 +98,18 @@ def main():
             if args.Imin >= args.Imax:
                 raise Exception("Mesostable(+1) lower-limit below LambdaA - above crit. temp.?")
 
+    if args.Is is not None:
+        ifs = sorted(set(np.linspace(args.Imin, args.Imax, args.Is, dtype=int)))
+        print(f"Interfaces: {np.array(ifs)[:20]} ...")
+    else:
+        ifs = [args.Imin, args.Imax]
+        print(f"Interfaces: dynamic {ifs[0]} .. {ifs[1]}")
 
-    ifs = sorted(set(np.linspace(args.Imin, args.Imax, args.Is, dtype=int)))
-    print(f"Interfaces: {np.array(ifs)[:20]} ...")
-
-    ff = FFSampler([state0], ifs, iface_samples=args.require_samples)
+    ff = FFSampler([state0], ifs, iface_samples=args.samples)
 
     try:
         with utils.timed(f"FF compute"):
-            ff.compute(progress=args.progress and tee.stderr, timeout=args.timeout)
+            ff.compute(progress=args.progress and tee.stderr, timeout=args.timeout, dynamic_ifaces=args.Is is None)
 
         with utils.timed(f"write '{args.fbase + '.json.bz2'}'"):
             d = dict(
@@ -145,19 +122,19 @@ def main():
                 CSize=ff.critical_order_param(),
                 T=args.T,
                 F=args.F,
-                GName=gname,
+                Graph=args.graph,
                 Param='UpSpins' if args.count_spins else 'UpCluster',
-                Samples=args.require_samples,
+                Samples=args.samples,
                 N=g.order(),
                 M=g.size(),
                 p=float(p) if args.pcg is not None else -1,
-
-                Edges=list(g.edges()),
                 Orders=[int(iface.order) for iface in ff.interfaces],
-                Clusters=[[int(x) for x in iface.states[0].get_stats().mask] for iface in ff.interfaces],
+                Clusters=[
+                    [int(x) for x in iface.states[0].get_stats().mask] for iface in ff.interfaces
+                ],
                 Rates=[iface.rate for iface in ff.interfaces],
-                )
-            with bz2.BZ2File(args.fbase+'.json.bz2', 'w') as jf:
+            )
+            with bz2.BZ2File(args.fbase + '.json.bz2', 'w') as jf:
                 jf.write(json.dumps(d).encode('utf-8'))
 
         with utils.timed(f"write '{args.fbase + '.ffs.pickle.bz2'}'"):
@@ -212,11 +189,6 @@ def main():
                        error_y=dict(type='data', array=Es_std, visible=True),
                        yaxis='y3',
                        name="Hamiltonian"),
-            # go.Scatter(x=Xs,
-            #            y=ECs,
-            #            error_y=dict(type='data', array=ECs_std, visible=True),
-            #            yaxis='y3',
-            #            name="Cluster H"),
         ]
         layout = go.Layout(
             yaxis=dict(rangemode='tozero', autorange=True),
@@ -236,5 +208,6 @@ def main():
                             include_plotlyjs='directory')
 
     print(f"Log in '{args.fbase + '.log'}'")
+
 
 main()

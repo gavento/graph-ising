@@ -27,6 +27,11 @@ class FFInterface:
     def __repr__(self):
         return f"<{self.__class__.__name__}({self.order:.4g}) {len(self.states)} samples, {self.s_up}U {self.s_down}D {self.s_timeout}TO, rate {self.rate:.3g}>"
 
+    def reset_counts(self):
+        self.s_up = 0
+        self.s_down = 0
+        self.s_timeout = 0
+
 
 class FFSampler:
 
@@ -38,35 +43,55 @@ class FFSampler:
             iface if isinstance(iface, FFInterface) else FFInterface(iface) for iface in interfaces
         ]
         self.ifaceA = self.interfaces[0]
+        self.ifaceB = self.interfaces[-1]
 
-    def compute(self, progress=True, report_degs=False, timeout=100.0):
+    def compute(self, progress=True, report_degs=False, timeout=100.0, dynamic_ifaces=False):
         self.sample_interface_A(progress=progress, timeout=timeout)
         print(f"Rate at iface A ({self.ifaceA.order}) is {self.ifaceA.rate:.3g} ups/MCSS/spin")
+        step = 10
+        ino = 1
 
-        for ino, iface in enumerate(self.interfaces):
-            if ino == 0:
-                continue
-
+        while True:
             prev = self.interfaces[ino - 1]
+            if not dynamic_ifaces:
+                iface = self.interfaces[ino]
+            else:
+                its = 0
+                while True:
+                    iface = FFInterface(min(prev.order + step, self.ifaceB.order))
+                    self.sample_interface(iface, prev=prev, progress=False, timeout=timeout, iface_samples=10)
+                    upflow = prev.up_flow()
+                    prev.reset_counts()
+                    print(f"  tried {iface.order} (step {step}), upflow {upflow:.3f}")
+
+                    if iface.order == self.ifaceB.order:
+                        iface = self.ifaceB
+                        break
+                    elif upflow >= 0.4 and its < 10:
+                        step = max(int(step * 1.5), step + 1)
+                        continue
+                    elif upflow <= 0.15 and step > 1 and its < 10:
+                        step = step // 2
+                        continue
+                    else:
+                        self.interfaces.insert(-1, FFInterface(iface.order))
+                        iface = self.interfaces[ino]
+                        break
+                
             self.sample_interface(iface, prev=prev, progress=progress, timeout=timeout)
 
-            print(f"  done {ino}/{len(self.interfaces)}, rate {iface.rate:.3g}, " +
+            s = f"done {ino}/{len(self.interfaces)} ifaces [{iface.order}]"
+            if dynamic_ifaces:
+                s = f"done [{iface.order}/{self.ifaceB.order}]"
+            up_norm = prev.up_flow() ** (1 / (iface.order - prev.order))
+            print(f"  {s}, up flow {prev.up_flow():.3f} (normalized {up_norm:.3f}), rate {iface.rate:.3g}, " +
                   f"orders {stat_str([s.get_order() for s in iface.states], True)}")
 
-            # Report in-cluster degrees and other stats
-            if report_degs:
-                s = iface.states[0]
-                mask = s.get_stats().mask
-
-                dgs = [0] * s.graph.size()
-                dgc = [0] * s.graph.size()
-                for v in range(s.n):
-                    d = s.graph.degree(v)
-                    dgs[d] += 1
-                    if mask[v] > 0:
-                        dgc[d] += 1
-                dgstr = ' '.join(f"{d}:{c}/{g}" for d, (g, c) in enumerate(zip(dgs, dgc)) if g > 0)
-                print(f"  one cluster degs: {dgstr}")
+            ino += 1
+            if dynamic_ifaces and self.ifaceB == iface:
+                break
+            if (not dynamic_ifaces) and ino == len(self.interfaces):
+                break
 
     def sample_interface_A(self, progress, timeout):
         up_times = []
@@ -127,15 +152,17 @@ class FFSampler:
             pb.close()
             print(pb)
 
-    def sample_interface(self, iface, prev, progress, timeout):
+    def sample_interface(self, iface, prev, progress, timeout, iface_samples=None):
+        if iface_samples is None:
+            iface_samples = self.iface_samples
         if progress:
-            pb = tqdm.tqdm(range(self.iface_samples),
+            pb = tqdm.tqdm(range(iface_samples),
                            f"Iface {iface.order:8.2f}",
                            dynamic_ncols=True,
                            leave=False,
                            file=progress if progress is not True else sys.stderr)
 
-        while len(iface.states) < self.iface_samples:
+        while len(iface.states) < iface_samples:
             # Select clustering seed for this pop
             state = np.random.choice(prev.states).copy()
             state.seed = np.random.randint(1 << 60)

@@ -16,6 +16,12 @@ class GraphIsingState(State):
         self.T = T
         self.set_graph(graph)
 
+    def set_spins(self, spins):
+        spins = np.array(spins, dtype='int8')
+        assert spins.shape == self.spins.shape
+        self.spins = spins
+        self.spins_up = np.sum((self.spins + 1) // 2)
+
     def set_graph(self, graph):
         """
         Set the internal graph to a list of edges [(u,v), ...].
