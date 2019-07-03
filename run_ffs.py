@@ -116,9 +116,9 @@ def main():
                 Name=args.full_name,
                 Comment=args.comment,
                 LambdaA=int(ff.interfaces[0].order),
-                RateA=ff.interfaces[0].rate,
+                Log10RateA=ff.interfaces[0].log10_rate,
                 LambdaB=int(ff.interfaces[-1].order),
-                RateB=ff.interfaces[-1].rate,
+                Log10RateB=ff.interfaces[-1].log10_rate,
                 CSize=ff.critical_order_param(),
                 T=args.T,
                 F=args.F,
@@ -127,12 +127,11 @@ def main():
                 Samples=args.samples,
                 N=g.order(),
                 M=g.size(),
-                p=float(p) if args.pcg is not None else -1,
                 Orders=[int(iface.order) for iface in ff.interfaces],
                 Clusters=[
                     [int(x) for x in iface.states[0].get_stats().mask] for iface in ff.interfaces
                 ],
-                Rates=[iface.rate for iface in ff.interfaces],
+                Log10Rates=[iface.log10_rate for iface in ff.interfaces],
             )
             with bz2.BZ2File(args.fbase + '.json.bz2', 'w') as jf:
                 jf.write(json.dumps(d).encode('utf-8'))
@@ -149,8 +148,8 @@ def main():
     print(f"FF cising stats:\n{report_runtime_stats()}")
 
     print()
-    print(f"Interface A at {ff.interfaces[0].order}, rate {ff.interfaces[0].rate:.5g}")
-    print(f"Interface B at {ff.interfaces[-1].order}, rate {ff.interfaces[-1].rate:.5g}")
+    print(f"Interface A at {ff.ifaceA.order}, rate 10^{ff.ifaceA.log10_rate:.3f}={10**ff.ifaceA.log10_rate:.5g}")
+    print(f"Interface B at {ff.ifaceB.order}, rate 10^{ff.ifaceB.log10_rate:.3f}={10**ff.ifaceB.log10_rate:.5g}")
     nucleus = ff.critical_order_param()
     if nucleus is not None:
         print(f"Critical nucleus size at {nucleus:.5g}")
@@ -179,7 +178,7 @@ def main():
             # apstat(ECs, ECs_std, ces)
             if ino < len(ff.interfaces) - 1:
                 UPs.append(iface.up_flow()**(1 / (ff.interfaces[ino + 1].order - iface.order)))
-            Rates.append(iface.rate)
+            Rates.append(iface.log10_rate)
 
         data = [
             go.Scatter(x=Xs, y=UPs, yaxis='y1', name="Up probability [per 1 order]"),
@@ -195,8 +194,6 @@ def main():
             yaxis2=dict(showticklabels=False,
                         overlaying='y',
                         side='left',
-                        exponentformat='e',
-                        type='log',
                         autorange=True),
             yaxis3=dict(title='E', overlaying='y', side='right', autorange=True),
             title=

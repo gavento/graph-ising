@@ -16,7 +16,7 @@ class FFSampler:
 class FFInterface:
     order = attr.ib(type=float)
     states = attr.ib(factory=list)
-    rate = attr.ib(0.0)
+    log10_rate = attr.ib(0.0)
     s_up = attr.ib(0)
     s_down = attr.ib(0)
     s_timeout = attr.ib(0)
@@ -47,7 +47,7 @@ class FFSampler:
 
     def compute(self, progress=True, report_degs=False, timeout=100.0, dynamic_ifaces=False):
         self.sample_interface_A(progress=progress, timeout=timeout)
-        print(f"Rate at iface A ({self.ifaceA.order}) is {self.ifaceA.rate:.3g} ups/MCSS/spin")
+        print(f"Rate at iface A ({self.ifaceA.order}) is {10 ** self.ifaceA.log10_rate:.3g} ups/MCSS/spin")
         step = 10
         ino = 1
 
@@ -62,7 +62,9 @@ class FFSampler:
                     self.sample_interface(iface, prev=prev, progress=False, timeout=timeout, iface_samples=10)
                     upflow = prev.up_flow()
                     prev.reset_counts()
-                    print(f"  tried {iface.order} (step {step}), upflow {upflow:.3f}")
+                    if False and its > 0:
+                        print(f"  .. tried {iface.order} (step {step}), upflow {upflow:.3f}")
+                    its += 1
 
                     if iface.order == self.ifaceB.order:
                         iface = self.ifaceB
@@ -84,7 +86,7 @@ class FFSampler:
             if dynamic_ifaces:
                 s = f"done [{iface.order}/{self.ifaceB.order}]"
             up_norm = prev.up_flow() ** (1 / (iface.order - prev.order))
-            print(f"  {s}, up flow {prev.up_flow():.3f} (normalized {up_norm:.3f}), rate {iface.rate:.3g}, " +
+            print(f"  {s}, up flow {prev.up_flow():.3f} (normalized {up_norm:.3f}), rate 10^{iface.log10_rate:.3f}={10**iface.log10_rate:.3g}, " +
                   f"orders {stat_str([s.get_order() for s in iface.states], True)}")
 
             ino += 1
@@ -145,7 +147,7 @@ class FFSampler:
             if progress:
                 pb.update(min(len(up_times), len(self.ifaceA.states)) - pb.n)
 
-        self.ifaceA.rate = 1.0 / np.mean(up_times)
+        self.ifaceA.log10_rate = np.log10(1.0 / np.mean(up_times))
 
         if progress:
             pb.update(min(len(up_times), len(self.ifaceA.states)) - pb.n)
@@ -184,20 +186,20 @@ class FFSampler:
             pb.close()
             print(pb)
 
-        iface.rate = prev.rate * prev.up_flow()
+        iface.log10_rate = prev.log10_rate + np.log10(prev.up_flow())
 
     def critical_order_param(self):
-        last_r = self.interfaces[-1].rate
-        if last_r <= 0.0:
+        last_r = self.ifaceB.log10_rate
+        if last_r == 0.0:
             return None
         for ino, iface in enumerate(self.interfaces):
-            if iface.rate < last_r * 2.0:
+            if iface.log10_rate < last_r + np.log10(2.0):
                 break
         if ino == 0:
             return 0.0
         prev = self.interfaces[ino - 1]
         # print(f"Locating {last_r * 2.0} in {prev.rate} .. {iface.rate} ({prev.order} .. {iface.order})")
-        la = np.log(prev.rate)
-        lx = np.log(last_r * 2.0)
-        lb = np.log(iface.rate)
+        la = prev.log10_rate
+        lx = last_r  + np.log10(2.0)
+        lb = iface.log10_rate
         return ((lx - la) * iface.order + (lb - lx) * prev.order) / (lb - la)
