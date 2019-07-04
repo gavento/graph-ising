@@ -45,10 +45,11 @@ class FFSampler:
         self.ifaceA = self.interfaces[0]
         self.ifaceB = self.interfaces[-1]
 
-    def compute(self, progress=True, report_degs=False, timeout=100.0, dynamic_ifaces=False):
+    def compute(self, progress=True, report_degs=False, timeout=100.0, dynamic_ifaces=False, stop_rate=None):
         self.sample_interface_A(progress=progress, timeout=timeout)
         print(f"Rate at iface A ({self.ifaceA.order}) is {10 ** self.ifaceA.log10_rate:.3g} ups/MCSS/spin")
         step = 10
+        maxstep = max((self.ifaceB.order - self.ifaceA.order) // 20, 1)
         ino = 1
 
         while True:
@@ -57,24 +58,29 @@ class FFSampler:
                 iface = self.interfaces[ino]
             else:
                 its = 0
+                last_dir = 0
                 while True:
                     iface = FFInterface(min(prev.order + step, self.ifaceB.order))
-                    self.sample_interface(iface, prev=prev, progress=False, timeout=timeout, iface_samples=10)
+                    ok = self.sample_interface(iface, prev=prev, progress=False, timeout=timeout, iface_samples=10, max_timeouts=1)
                     upflow = prev.up_flow()
+                    if not ok:
+                        print(f"  .. failed to estimate step at {iface.order}, too many timeouts (upflow {upflow:.3f}, step {step})")
                     prev.reset_counts()
                     if False and its > 0:
                         print(f"  .. tried {iface.order} (step {step}), upflow {upflow:.3f}")
                     its += 1
 
-                    if iface.order == self.ifaceB.order:
-                        iface = self.ifaceB
-                        break
-                    elif upflow >= 0.4 and its < 10:
-                        step = max(int(step * 1.5), step + 1)
+                    if upflow >= 0.5 and step < maxstep and its < 10 and last_dir >= 0:
+                        step = min(max(int(step * 2), step + 1), maxstep)
+                        last_dir = 1
                         continue
                     elif upflow <= 0.15 and step > 1 and its < 10:
-                        step = step // 2
+                        step = step * 2 // 3
+                        last_dir = -1
                         continue
+                    elif iface.order == self.ifaceB.order:
+                        iface = self.ifaceB
+                        break
                     else:
                         self.interfaces.insert(-1, FFInterface(iface.order))
                         iface = self.interfaces[ino]
@@ -93,6 +99,9 @@ class FFSampler:
             if dynamic_ifaces and self.ifaceB == iface:
                 break
             if (not dynamic_ifaces) and ino == len(self.interfaces):
+                break
+            if stop_rate is not None and stop_rate > iface.log10_rate:
+                print(f"  Rate below stop_rate 10^{stop_rate:.3f}, stopping")
                 break
 
     def sample_interface_A(self, progress, timeout):
@@ -154,7 +163,8 @@ class FFSampler:
             pb.close()
             print(pb)
 
-    def sample_interface(self, iface, prev, progress, timeout, iface_samples=None):
+    def sample_interface(self, iface, prev, progress, timeout, iface_samples=None, max_timeouts=None):
+        "Return False on too many timeouts"
         if iface_samples is None:
             iface_samples = self.iface_samples
         if progress:
@@ -176,6 +186,8 @@ class FFSampler:
                 iface.states.append(state.copy())
             else:
                 prev.s_timeout += 1
+                if max_timeouts is not None and prev.s_timeout >= max_timeouts:
+                    return False
 
             if progress:
                 pb.update(len(iface.states) - pb.n)
@@ -187,6 +199,7 @@ class FFSampler:
             print(pb)
 
         iface.log10_rate = prev.log10_rate + np.log10(prev.up_flow())
+        return True
 
     def critical_order_param(self):
         last_r = self.ifaceB.log10_rate

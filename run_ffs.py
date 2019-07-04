@@ -3,7 +3,10 @@
 import bz2
 import itertools
 import json
+import os
 import pickle
+import re
+import signal
 
 import networkx as nx
 import numpy as np
@@ -15,6 +18,14 @@ import scipy.stats
 from gising import utils
 from gising.forward_flux import FFSampler
 from gising.ising_state import (ClusterOrderIsingState, SpinCountIsingState, report_runtime_stats)
+
+
+def strip_suffix(s):
+    s = re.sub('\\.gz$', '', s)
+    s = re.sub('\\.bz$', '', s)
+    s = re.sub('\\.bz2$', '', s)
+    s = re.sub('\\.graphml$', '', s)
+    return s
 
 
 def main():
@@ -32,14 +43,23 @@ def main():
                         help="Interfaces to use (default: dynamic).")
     parser.add_argument("--Imin",
                         default=None,
-                        type=float,
+                        type=int,
                         help="Interface A order param (default: from mesostable).")
     parser.add_argument("--Imax",
                         default=None,
-                        type=float,
+                        type=int,
                         help="Interface B order param (default: from mesostable).")
     parser.add_argument("-T", default=1.0, type=float, help="Temperature.")
     parser.add_argument("-F", default=0.0, type=float, help="Field.")
+    parser.add_argument("--meso_time",
+                        "-m",
+                        default=1000.0,
+                        type=float,
+                        help="Time spent for mesostable state sampling.")
+    parser.add_argument("--stop_rate",
+                        default=None,
+                        type=float,
+                        help="If given, stop if rate goes below [given as 10-exponent].")
     parser.add_argument("--timeout",
                         default=10000.0,
                         type=float,
@@ -76,14 +96,20 @@ def main():
             # TODO: Special clustering options will go here
             state0 = ClusterOrderIsingState(g, T=args.T, F=args.F)
 
+    chaotic = False
+
     if args.Imin is None:
         with utils.timed("sample mesostable for iface A"):
-            spl = state0.sample_mesostable(progress=args.progress and tee.stderr)
-            spl = spl[:, (spl.shape[1] * 2 // 3):]
+            spl = state0.sample_mesostable(progress=args.progress and tee.stderr,
+                                           time=args.meso_time / 5,
+                                           samples=min(int(args.meso_time), 10),
+                                           trials=5)
+            spl = spl[:, (spl.shape[1] // 2):]
             args.Imin = int(sp.stats.norm.ppf(1 - 1e-4, loc=np.mean(spl), scale=np.std(spl)))
             print(f"Selected LambdaA={args.Imin} based on {utils.stat_str(spl, True, prec=5)}")
             if args.Imax is not None and args.Imin >= args.Imax:
-                raise Exception(
+                chaotic = True
+                print(
                     "Mesostable(-1) upper-limit above target order - divergent process or above crit. temp.?"
                 )
 
@@ -91,12 +117,16 @@ def main():
         with utils.timed("sample mesostable for iface B"):
             state1 = state0.copy()
             state1.set_spins(np.ones(state1.n))
-            spl = state1.sample_mesostable(progress=args.progress and tee.stderr)
-            spl = spl[:, (spl.shape[1] * 2 // 3):]
-            args.Imax = int(sp.stats.norm.ppf(1e-10, loc=np.mean(spl), scale=np.std(spl)))
+            spl = state1.sample_mesostable(progress=args.progress and tee.stderr,
+                                           time=args.meso_time / 5,
+                                           samples=min(int(args.meso_time), 10),
+                                           trials=5)
+            spl = spl[:, (spl.shape[1] // 2):]
+            args.Imax = int(sp.stats.norm.ppf(1e-4, loc=np.mean(spl), scale=np.std(spl)))
             print(f"Selected LambdaB={args.Imax} based on {utils.stat_str(spl, True, prec=5)}")
             if args.Imin >= args.Imax:
-                raise Exception("Mesostable(+1) lower-limit below LambdaA - above crit. temp.?")
+                chaotic = True
+                print("Mesostable(+1) lower-limit below LambdaA - above crit. temp.?")
 
     if args.Is is not None:
         ifs = sorted(set(np.linspace(args.Imin, args.Imax, args.Is, dtype=int)))
@@ -108,8 +138,14 @@ def main():
     ff = FFSampler([state0], ifs, iface_samples=args.samples)
 
     try:
-        with utils.timed(f"FF compute"):
-            ff.compute(progress=args.progress and tee.stderr, timeout=args.timeout, dynamic_ifaces=args.Is is None)
+        if not chaotic:
+            with utils.timed(f"FF compute"):
+                ff.compute(progress=args.progress and tee.stderr,
+                           timeout=args.timeout,
+                           dynamic_ifaces=args.Is is None,
+                           stop_rate=args.stop_rate)
+        else:
+            print("... skiping ff.compute(), system chaotic")
 
         with utils.timed(f"write '{args.fbase + '.json.bz2'}'"):
             d = dict(
@@ -123,14 +159,16 @@ def main():
                 T=args.T,
                 F=args.F,
                 Graph=args.graph,
+                Chaotic=chaotic,
                 Param='UpSpins' if args.count_spins else 'UpCluster',
                 Samples=args.samples,
                 N=g.order(),
                 M=g.size(),
                 Orders=[int(iface.order) for iface in ff.interfaces],
-                Clusters=[
-                    [int(x) for x in iface.states[0].get_stats().mask] for iface in ff.interfaces
-                ],
+                Clusters=[[int(x)
+                           for x in iface.states[0].get_stats().mask]
+                          for iface in ff.interfaces
+                          if iface.states],
                 Log10Rates=[iface.log10_rate for iface in ff.interfaces],
             )
             with bz2.BZ2File(args.fbase + '.json.bz2', 'w') as jf:
@@ -148,13 +186,19 @@ def main():
     print(f"FF cising stats:\n{report_runtime_stats()}")
 
     print()
-    print(f"Interface A at {ff.ifaceA.order}, rate 10^{ff.ifaceA.log10_rate:.3f}={10**ff.ifaceA.log10_rate:.5g}")
-    print(f"Interface B at {ff.ifaceB.order}, rate 10^{ff.ifaceB.log10_rate:.3f}={10**ff.ifaceB.log10_rate:.5g}")
+    print(
+        f"Interface A at {ff.ifaceA.order}, rate 10^{ff.ifaceA.log10_rate:.3f}={10**ff.ifaceA.log10_rate:.5g}"
+    )
+    print(
+        f"Interface B at {ff.ifaceB.order}, rate 10^{ff.ifaceB.log10_rate:.3f}={10**ff.ifaceB.log10_rate:.5g}"
+    )
     nucleus = ff.critical_order_param()
     if nucleus is not None:
         print(f"Critical nucleus size at {nucleus:.5g}")
     print()
 
+    if chaotic:
+        return
     ### Graph drawing
 
     with utils.timed(f"Ploting {args.fbase + '.html'}"):
@@ -191,13 +235,10 @@ def main():
         ]
         layout = go.Layout(
             yaxis=dict(rangemode='tozero', autorange=True),
-            yaxis2=dict(showticklabels=False,
-                        overlaying='y',
-                        side='left',
-                        autorange=True),
+            yaxis2=dict(showticklabels=False, overlaying='y', side='left', autorange=True),
             yaxis3=dict(title='E', overlaying='y', side='right', autorange=True),
             title=
-            f'FF sampling on {gname}, T={args.T:.3g}, F={args.F:.3g}, {args.require_samples} states/iface, {args.cluster_samples} clustering samples'
+            f'FF sampling on {strip_suffix(args.graph)}, T={args.T:.3g}, F={args.F:.3g}, {args.samples} samples/iface'
         )
         plotly.offline.plot(go.Figure(data=data, layout=layout),
                             filename=args.fbase + '.html',
@@ -207,4 +248,12 @@ def main():
     print(f"Log in '{args.fbase + '.log'}'")
 
 
-main()
+def handle_pdb(sig, frame):
+    import pdb
+    pdb.Pdb().set_trace(frame)
+
+
+if __name__ == '__main__':
+    signal.signal(signal.SIGUSR1, handle_pdb)
+    print(os.getpid())
+    main()

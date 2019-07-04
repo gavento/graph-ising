@@ -53,7 +53,7 @@ class State:
         "Run simulation until the order is `>=hi`, `<lo`, or for at most `timeout` MCSS."
         raise NotImplementedError()
 
-    def sample_mesostable(self, progress=True, time=200, samples=100, trials=5):
+    def sample_mesostable(self, progress=True, time=200, samples=1000, trials=5):
         r = range(trials)
         if progress:
             r = tqdm.tqdm(r,
