@@ -156,7 +156,7 @@ class FFSampler:
             if progress:
                 pb.update(min(len(up_times), len(self.ifaceA.states)) - pb.n)
 
-        self.ifaceA.log10_rate = np.log10(1.0 / np.mean(up_times))
+        self.ifaceA.log10_rate = np.log10(1.0 / np.mean(up_times) / state.n)
 
         if progress:
             pb.update(min(len(up_times), len(self.ifaceA.states)) - pb.n)

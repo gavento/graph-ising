@@ -20,14 +20,6 @@ from gising.forward_flux import FFSampler
 from gising.ising_state import (ClusterOrderIsingState, SpinCountIsingState, report_runtime_stats)
 
 
-def strip_suffix(s):
-    s = re.sub('\\.gz$', '', s)
-    s = re.sub('\\.bz$', '', s)
-    s = re.sub('\\.bz2$', '', s)
-    s = re.sub('\\.graphml$', '', s)
-    return s
-
-
 def main():
     parser = utils.default_parser()
     parser.add_argument("graph", metavar="GRAPHML", type=str, help="Use given GraphML file.")
@@ -169,6 +161,12 @@ def main():
                            for x in iface.states[0].get_stats().mask]
                           for iface in ff.interfaces
                           if iface.states],
+                Hamiltonians=[[s.get_hamiltonian() for s in iface.states] for iface in ff.interfaces
+                             ],
+                UpFlows=[
+                    iface.up_flow()**(1 / (ff.interfaces[ino + 1].order - iface.order))
+                    for ino, iface in enumerate(ff.interfaces[:-1])
+                ],
                 Log10Rates=[iface.log10_rate for iface in ff.interfaces],
             )
             with bz2.BZ2File(args.fbase + '.json.bz2', 'w') as jf:
@@ -181,7 +179,7 @@ def main():
     except KeyboardInterrupt:
         print("\nInterrupted, trying to still report anything already computed ...")
 
-    ### Reports
+    ### Reportss in iface.states
 
     print(f"FF cising stats:\n{report_runtime_stats()}")
 
@@ -195,57 +193,24 @@ def main():
     nucleus = ff.critical_order_param()
     if nucleus is not None:
         print(f"Critical nucleus size at {nucleus:.5g}")
+        with utils.timed(f'writing critical core sample to {args.fbase + "-core.graphml.bz2"}'):
+            for iface in reversed(ff.interfaces):
+                if iface.order < nucleus:
+                    break
+            print(f"  Writing samples from iface at {iface.order}")
+            g2 = g.copy()
+            state = iface.states[0]
+            mask = state.get_stats().mask
+            for vi, v in enumerate(state.nodes):
+                if mask[vi]:
+                    g2.nodes[v]['core'] = True
+                else:
+                    g2.nodes[v]['core'] = False
+            nx.write_graphml(g2, args.fbase + "-core.graphml.bz2")
+
     print()
-
-    if chaotic:
-        return
-    ### Graph drawing
-
-    with utils.timed(f"Ploting {args.fbase + '.html'}"):
-        Xs = []
-        Es, Es_std = [], []
-        ECs, ECs_std = [], []
-        UPs = []
-        Rates = []
-
-        def apstat(mean, std, vals):
-            mean.append(np.mean(vals))
-            std.append(np.std(vals))
-
-        for ino, iface in enumerate(ff.interfaces):
-            es = []
-            for s in iface.states:
-                es.append(s.get_hamiltonian())
-
-            Xs.append(iface.order)
-            apstat(Es, Es_std, es)
-            # apstat(ECs, ECs_std, ces)
-            if ino < len(ff.interfaces) - 1:
-                UPs.append(iface.up_flow()**(1 / (ff.interfaces[ino + 1].order - iface.order)))
-            Rates.append(iface.log10_rate)
-
-        data = [
-            go.Scatter(x=Xs, y=UPs, yaxis='y1', name="Up probability [per 1 order]"),
-            go.Scatter(x=Xs, y=Rates, yaxis='y2', name="Visit rate (up) [sweeps]"),
-            go.Scatter(x=Xs,
-                       y=Es,
-                       error_y=dict(type='data', array=Es_std, visible=True),
-                       yaxis='y3',
-                       name="Hamiltonian"),
-        ]
-        layout = go.Layout(
-            yaxis=dict(rangemode='tozero', autorange=True),
-            yaxis2=dict(showticklabels=False, overlaying='y', side='left', autorange=True),
-            yaxis3=dict(title='E', overlaying='y', side='right', autorange=True),
-            title=
-            f'FF sampling on {strip_suffix(args.graph)}, T={args.T:.3g}, F={args.F:.3g}, {args.samples} samples/iface'
-        )
-        plotly.offline.plot(go.Figure(data=data, layout=layout),
-                            filename=args.fbase + '.html',
-                            auto_open=False,
-                            include_plotlyjs='directory')
-
-    print(f"Log in '{args.fbase + '.log'}'")
+    print(f"Log in {args.fbase + '.log'}")
+    print(f"Data in {args.fbase + '.json.bz2'} (use plot_ffs.py to plot)")
 
 
 def handle_pdb(sig, frame):

@@ -61,6 +61,8 @@ def main():
             g = nx.DiGraph(edges)
         else:
             g = nx.Graph(edges)
+    else:
+        raise Exception('Command required')
 
     nx.write_graphml(g, args.o)
 
