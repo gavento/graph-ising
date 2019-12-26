@@ -1,5 +1,8 @@
 /gising/*.so
+/gising/cising/*.so
 /gising/*.o
-/gising/isingtest
+/gising/cising/*.o
+/gising/cising/test1
 /.vscode
 /logs
+*.json.bz2

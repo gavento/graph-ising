@@ -1,15 +1,16 @@
-.PHONY: all clean
+.PHONY: all clean test lib
 
-CFLAGS=-Wall -O3 -g3 -std=c99
-
-all: _cising.so isingtest
+all: lib test
 
 clean:
-	rm -f *.pyc _cising.so isingtest
+	rm -f *.pyc _cising.so
+	cd cising && make clean
 
-_cising.so: _cising.c
-	gcc -shared -o $@ -fpic $(CFLAGS) $< -lm 
+lib:
+	cd cising && make _cising.so
+	cp cising/_cising.so .
 
-isingtest: _cising.c
-	gcc -o $@ $(CFLAGS) -Dmain_test=main $< -lm 
+test:
+	cd cising && make test1
+	cd cising && ./test1
 
