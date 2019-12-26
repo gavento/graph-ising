@@ -10,6 +10,7 @@ double ising_hamiltonian(ising_state *s, double F, double J)
     for (index_t v = 0; v < s->n; v++)
     {
         spin_t spin = s->spins[v];
+        assert(spin == -1 || spin == 1);
         H -= spin * F;
         for (index_t i = 0; i < s->degree[v]; i++)
         {

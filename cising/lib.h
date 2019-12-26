@@ -26,8 +26,8 @@ typedef int8_t spin_t;
 typedef struct
 {
     index_t n;             // Number of spins (vertices)
-    spin_t *spins;         // Values of spins
-    double field;          // External dield
+    spin_t *spins;         // Values of spins (-1, 1) or game states (0, 1)
+    double field;          // External field
     double T;              // Temperature
     rand_t seed;           // Random seed. Modified with computation.
     index_t spins_up;      // Number of +1 spins (can be absolute or relative, updated only +-1).
@@ -38,6 +38,31 @@ typedef struct
     index_t *degree_sum;   // Sum of all degrees up to and incl. this node
                            // (for random edge generation)
 } ising_state;
+
+
+/* 
+ * cising.c *********************************************************
+ */
+
+double ising_hamiltonian(ising_state *s, double F, double J);
+index_t ising_mc_update(ising_state *s, index_t index);
+index_t ising_mc_update_random(ising_state *s, index_t updates);
+index_t ising_mc_sweep(ising_state *s, index_t sweeps);
+index_t ising_mc_sweep_partial(ising_state *s, index_t updates);
+index_t update_until_spincount(ising_state *s, index_t low, index_t hi, uint64_t timeout);
+
+/* 
+ * games.c **********************************************************
+ */
+
+/*
+ * indexed as [p0_action][p1_action][payoff_for_whom]
+ */
+typedef double ising_game_def[2][2][2];
+
+/*
+ * clustering.c *****************************************************
+ */
 
 /*
  * Structure describing either statistics of one cluster, or maximum statistics
@@ -52,33 +77,19 @@ typedef struct
     index_t e_border;     // Edges going out
 } ising_cluster_stats;
 
-/*
- * utils.c
- */
-uint32_t get_rand(rand_t *seed);
-double get_rand_01(rand_t *seed);
-void get_rand_perm(size_t n, index_t *result, rand_t *seed);
-int get_rand_edge_presence(index_t u, index_t v, double edge_prob, rand_t seed);
-
-/*
- * clustering.c
- */
 index_t ising_max_cluster_once(ising_state *s, spin_t value, double edge_prob,
                                ising_cluster_stats *max_stats, uint8_t *out_mask);
 index_t ising_max_cluster_multi(ising_state *s, uint32_t measure, spin_t value,
                                 double edge_prob, ising_cluster_stats *max_stats, uint8_t *out_mask);
 
-
-/* 
- * cising.c
+/*
+ * utils.c **********************************************************
  */
-double ising_hamiltonian(ising_state *s, double F, double J);
-index_t ising_mc_update(ising_state *s, index_t index);
-index_t ising_mc_update_random(ising_state *s, index_t updates);
-index_t ising_mc_sweep(ising_state *s, index_t sweeps);
-index_t ising_mc_sweep_partial(ising_state *s, index_t updates);
-index_t update_until_spincount(ising_state *s, index_t low, index_t hi, uint64_t timeout);
 
+uint32_t get_rand(rand_t *seed);
+double get_rand_01(rand_t *seed);
+void get_rand_perm(size_t n, index_t *result, rand_t *seed);
+int get_rand_edge_presence(index_t u, index_t v, double edge_prob, rand_t seed);
 
 /*
  * Global counters, used for statistics.

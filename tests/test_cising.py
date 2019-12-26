@@ -1,6 +1,6 @@
 import pytest
 import networkx as nx
-from gising import utils, cising
+from netising import utils, cising
 
 
 def test_bench():

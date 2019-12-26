@@ -1,8 +1,6 @@
-/gising/*.so
-/gising/cising/*.so
-/gising/*.o
-/gising/cising/*.o
-/gising/cising/test1
+*.so
+/cising/test1
 /.vscode
 /logs
 *.json.bz2
+__pycache__

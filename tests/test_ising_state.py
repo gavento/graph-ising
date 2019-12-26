@@ -1,5 +1,5 @@
 import concurrent.futures
-from gising.cising import IsingState
+from netising.ising_state import GraphIsingState
 import networkx as nx
 import numpy as np
 import time
@@ -10,7 +10,7 @@ def do_job(state, sweeps):
     return state.mc_max_cluster()
 
 
-def test():
+def test_state():
 
     # Test 0
     s = IsingState(n=5, spins=[-1, -1, -1, 1, 1])
@@ -66,5 +66,3 @@ def test():
 
     print("  Time: %f" % (time.time() - t0))
 
-
-test()

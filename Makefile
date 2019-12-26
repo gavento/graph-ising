@@ -1,13 +1,18 @@
-.PHONY: all clean
+.PHONY: all clean test lib
 
-all:
-	cd gising; make all
+all: lib
 
 clean:
-	cd gising; make clean
-	rm -rf .pytest_cache
+	cd cising && make clean
+	rm -f netising/*.pyc netising/_cising.so
+	rm -rf __pycache__
 
-test: clean all
-	./gising/isingtest
-	pytest
+lib:
+	cd cising && make _cising.so
+	cp cising/_cising.so netising/
+
+test: lib
+	cd cising && make test1
+	cising/test1
+	pytest . -v
 
