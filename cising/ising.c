@@ -141,12 +141,12 @@ index_t ising_mc_sweep_partial(ising_state *s, index_t updates)
  * Updates a random spin until the up spins are <low, >=hi or timeout updates have been attempted.
  * Returns the number of flipped spins.
  */
-index_t update_until_spincount(ising_state *s, index_t low, index_t hi, uint64_t timeout)
+index_t ising_update_until_spincount(ising_state *s, index_t low, index_t hi, uint64_t max_steps)
 {
     START_TIMER();
     index_t flipped = 0;
     uint64_t i;
-    for (i = 0; i < timeout; i++)
+    for (i = 0; i < max_steps; i++)
     {
         if (s->spins_up < low || s->spins_up >= hi)
             break;

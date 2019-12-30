@@ -48,17 +48,18 @@ typedef struct
 } ising_digraph;
 */
 
+/* 
+ * ising.c *********************************************************
+ */
+
 /*
- * Structure describing one ising model state, including the graph.
- * The graph is encoded in neigh_list as:
- * [neighbors of vertex 0 ..., -1, neighbors of vertex 1 ..., -1, ...]
- * The array neigh_offset[v] is the start index of v's neighbourhood.
+ * Structure describing one ising model state.
  */
 typedef struct
 {
     index_t n; // Number of spins (vertices)
     ising_graph *g;
-    spin_t *spins;    // Values of spins (-1, 1) or game states (0, 1)
+    spin_t *spins;    // Values of spins (-1, 1)
     double field;     // External field
     double T;         // Temperature
     rand_t seed;      // Random seed. Modified with computation.
@@ -66,16 +67,12 @@ typedef struct
     index_t updates;  // Attempted spin updates
 } ising_state;
 
-/* 
- * cising.c *********************************************************
- */
-
 double ising_hamiltonian(ising_state *s, double F, double J);
 index_t ising_mc_update(ising_state *s, index_t index);
 index_t ising_mc_update_random(ising_state *s, index_t updates);
 index_t ising_mc_sweep(ising_state *s, index_t sweeps);
 index_t ising_mc_sweep_partial(ising_state *s, index_t updates);
-index_t update_until_spincount(ising_state *s, index_t low, index_t hi, uint64_t timeout);
+index_t ising_update_until_spincount(ising_state *s, index_t low, index_t hi, uint64_t max_steps);
 
 /* 
  * games.c **********************************************************
@@ -85,6 +82,28 @@ index_t update_until_spincount(ising_state *s, index_t low, index_t hi, uint64_t
  * indexed as [p0_action][p1_action][payoff_for_whom]
  */
 typedef double ising_game_def[2][2][2];
+
+/*
+ * Structure describing one game state.
+ */
+typedef struct
+{
+    index_t n;            // Number of spins (vertices)
+    ising_graph *g;       // Player network
+    ising_game_def *game; // The game def. matrix as [p0_act][p1_act][payoff_for_whom]
+    spin_t *states;       // Player actions (0, 1)
+    double field;         // External field (preference for 1-states)
+    double T;             // Temperature
+    rand_t seed;          // Random seed. Modified with computation.
+    index_t states_1;     // Number of 1 spins (can be absolute or relative, updated only +-1).
+    index_t updates;      // Total attempted state updates
+} ising_game_state;
+
+double ising_game_hamiltonian(const ising_game_state *s);
+index_t ising_game_mc_update(ising_game_state *s, index_t index);
+index_t ising_game_mc_update_random(ising_game_state *s, index_t updates);
+index_t ising_game_update_until_1count(ising_game_state *s, index_t low, index_t hi, uint64_t max_steps);
+
 
 /*
  * clustering.c *****************************************************

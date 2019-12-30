@@ -12,7 +12,7 @@ lib:
 	cp cising/_cising.so netising/
 
 test: lib
-	cd cising && make test1
-	cising/test1
+	cd cising && make tests
+	cd cising && make runtests
 	pytest . -v
 
