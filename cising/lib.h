@@ -18,6 +18,34 @@ typedef int32_t index_t;
 typedef int8_t spin_t;
 
 /*
+ * Structure describing a static network.
+ * The graph is encoded in neigh_list as:
+ * [neighbors of vertex 0 ..., -1 (one or many), neighbors of vertex 1 ..., -1 (one or many), ...]
+ * The array neigh_offset[v] is the start index of v's neighbourhood.
+ */
+
+typedef struct
+{
+    index_t n;             // Number of spins (vertices)
+    index_t m;             // Number of edges 
+    index_t *neigh_list;   // Neighbor lists for all vertices. Every list is degree[v] long.
+    index_t *neigh_offset; // For every node starting offset in neigh_list
+    index_t *degree;       // Node degrees
+} ising_graph;
+
+typedef struct
+{
+    index_t n;                  // Number of spins (vertices)
+    index_t m;                  // Number of edges 
+    index_t *out_neigh_list;    // Out-neighbor lists for all vertices. Every list is out_degree[v] long.
+    index_t *out_neigh_offset;  // For every node starting offset in out_neigh_list
+    index_t *out_degree;        // Node out-degrees
+    index_t *in_neigh_list;     // In-neighbor lists for all vertices. Every list is out_degree[v] long.
+    index_t *in_neigh_offset;   // For every node starting offset in in_neigh_list
+    index_t *in_degree;         // Node in-degrees
+} ising_digraph;
+
+/*
  * Structure describing one ising model state, including the graph.
  * The graph is encoded in neigh_list as:
  * [neighbors of vertex 0 ..., -1, neighbors of vertex 1 ..., -1, ...]
@@ -25,18 +53,13 @@ typedef int8_t spin_t;
  */
 typedef struct
 {
-    index_t n;             // Number of spins (vertices)
+    ising_graph g;
     spin_t *spins;         // Values of spins (-1, 1) or game states (0, 1)
     double field;          // External field
     double T;              // Temperature
     rand_t seed;           // Random seed. Modified with computation.
     index_t spins_up;      // Number of +1 spins (can be absolute or relative, updated only +-1).
     index_t updates;       // Attempted spin updates
-    index_t *neigh_list;   // Neighbor lists for all vertices. Every list is degree[v] long.
-    index_t *neigh_offset; // For every node starting offset in neigh_list
-    index_t *degree;       // Node degrees (informational)
-    index_t *degree_sum;   // Sum of all degrees up to and incl. this node
-                           // (for random edge generation)
 } ising_state;
 
 

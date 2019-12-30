@@ -7,9 +7,9 @@ all: _cising.so test1
 clean:
 	rm -f _cising.so test1 *.o
 
-_cising.so: cising.c utils.c clustering.c
+_cising.so: ising.c utils.c clustering.c
 	gcc -shared -o $@ -fpic $(CFLAGS) $^ -lm 
 
-test1: cising.c utils.c clustering.c test1.c
+test1: ising.c utils.c clustering.c test1.c
 	gcc -o $@ $(CFLAGS) $^ -lm 
 

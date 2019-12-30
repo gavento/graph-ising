@@ -7,14 +7,14 @@
 double ising_hamiltonian(ising_state *s, double F, double J)
 {
     float H = 0.0;
-    for (index_t v = 0; v < s->n; v++)
+    for (index_t v = 0; v < s->g.n; v++)
     {
         spin_t spin = s->spins[v];
         assert(spin == -1 || spin == 1);
         H -= spin * F;
-        for (index_t i = 0; i < s->degree[v]; i++)
+        for (index_t i = 0; i < s->g.degree[v]; i++)
         {
-            index_t u = s->neigh_list[s->neigh_offset[v] + i];
+            index_t u = s->g.neigh_list[s->g.neigh_offset[v] + i];
             if (u > v)
             {
                 H -= J * spin * s->spins[u];
@@ -32,9 +32,9 @@ index_t ising_mc_update(ising_state *s, index_t index)
     index_t flipped = 0;
 
     index_t sum = 0;
-    for (index_t i = 0; i < s->degree[index]; i++)
+    for (index_t i = 0; i < s->g.degree[index]; i++)
     {
-        index_t u = s->neigh_list[s->neigh_offset[index] + i];
+        index_t u = s->g.neigh_list[s->g.neigh_offset[index] + i];
         sum += s->spins[u];
     }
 
@@ -76,7 +76,7 @@ index_t ising_mc_update_random(ising_state *s, index_t updates)
 
     for (index_t i = 0; i < updates; i++)
     {
-        index_t spin = get_rand(&s->seed) % s->n;
+        index_t spin = get_rand(&s->seed) % s->g.n;
         flipped += ising_mc_update(s, spin);
     }
 
@@ -93,12 +93,12 @@ index_t ising_mc_update_random(ising_state *s, index_t updates)
 index_t ising_mc_sweep(ising_state *s, index_t sweeps)
 {
     index_t flipped = 0;
-    index_t *perm = alloca(sizeof(index_t[s->n]));
+    index_t *perm = alloca(sizeof(index_t[s->g.n]));
 
     for (int swi = 0; swi < sweeps; swi++)
     {
-        get_rand_perm(s->n, perm, &s->seed);
-        for (index_t i = 0; i < s->n; i++)
+        get_rand_perm(s->g.n, perm, &s->seed);
+        for (index_t i = 0; i < s->g.n; i++)
         {
             flipped += ising_mc_update(s, perm[i]);
         }
@@ -118,16 +118,16 @@ index_t ising_mc_sweep_partial(ising_state *s, index_t updates)
     index_t flipped = 0;
     START_TIMER();
 
-    if (updates >= s->n)
+    if (updates >= s->g.n)
     {
-        flipped += ising_mc_sweep(s, updates / s->n);
-        updates = updates % s->n;
+        flipped += ising_mc_sweep(s, updates / s->g.n);
+        updates = updates % s->g.n;
     }
 
     if (updates > 0)
     {
-        index_t *perm = alloca(sizeof(index_t[s->n]));
-        get_rand_perm(s->n, perm, &s->seed);
+        index_t *perm = alloca(sizeof(index_t[s->g.n]));
+        get_rand_perm(s->g.n, perm, &s->seed);
         for (index_t i = 0; i < updates; i++)
         {
             flipped += ising_mc_update(s, perm[i]);
@@ -152,7 +152,7 @@ index_t update_until_spincount(ising_state *s, index_t low, index_t hi, uint64_t
         if (s->spins_up < low || s->spins_up >= hi)
             break;
 
-        index_t spin = get_rand(&s->seed) % s->n;
+        index_t spin = get_rand(&s->seed) % s->g.n;
         flipped += ising_mc_update(s, spin);
     }
     STOP_TIMER(update, i);

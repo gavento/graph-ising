@@ -5,31 +5,31 @@ int main()
     const int n = 10000;
 
     ising_state s = {
-        .n = n,
+        .g = {
+            .n = n,
+            .neigh_list = malloc(sizeof(index_t[30 * n])),
+            .neigh_offset = malloc(sizeof(index_t[n])),
+            .degree = malloc(sizeof(index_t[n])),
+        },
         .spins = malloc(sizeof(spin_t[n])),
         .field = 3,
         .T = 15.,
         .seed = 42,
-        .neigh_list = malloc(sizeof(index_t[30 * n])),
-        .neigh_offset = malloc(sizeof(index_t[n])),
-        .degree = malloc(sizeof(index_t[n])),
-        .degree_sum = malloc(sizeof(index_t[n])),
     };
 
     uint32_t nlpos = 0;
     for (index_t i = 0; i < n; i++)
     {
         s.spins[i] = 1;
-        s.neigh_offset[i] = nlpos;
+        s.g.neigh_offset[i] = nlpos;
         for (int d = -10; d <= 10; d++)
         {
             if (d != 0)
             {
-                s.neigh_list[nlpos++] = (i + d + n) % n;
+                s.g.neigh_list[nlpos++] = (i + d + n) % n;
             }
         }
-        s.degree[i] = 20;
-        s.degree_sum[i] = 20 * i;
+        s.g.degree[i] = 20;
     }
 
     ising_cluster_stats stats;
