@@ -95,14 +95,14 @@ index_t ising_max_cluster_once(ising_state *s, spin_t value, double edge_prob,
                                ising_cluster_stats *max_stats, uint8_t *out_mask)
 {
     START_TIMER();
-    index_t *visited = memset(alloca(sizeof(index_t[s->g->n])), 0, sizeof(index_t[s->g->n]));
+    index_t *visited = memset(alloca(sizeof(index_t[s->n])), 0, sizeof(index_t[s->n]));
     ising_cluster_stats cur_stats;
     if (max_stats)
         memset(max_stats, 0, sizeof(ising_cluster_stats));
     index_t max_size = 0, size, max_mark = 1;
     rand_t saved_seed = s->seed;
 
-    for (index_t v = 0; v < s->g->n; v++)
+    for (index_t v = 0; v < s->n; v++)
     {
 
         if ((visited[v] == 0) && (s->spins[v] == value))
@@ -134,7 +134,7 @@ index_t ising_max_cluster_once(ising_state *s, spin_t value, double edge_prob,
     }
     if (out_mask)
     {
-        for (index_t v = 0; v < s->g->n; v++)
+        for (index_t v = 0; v < s->n; v++)
         {
             if ((visited[v] == max_mark) && (s->spins[v] == value))
             {
@@ -147,7 +147,7 @@ index_t ising_max_cluster_once(ising_state *s, spin_t value, double edge_prob,
         }
     }
 
-    STOP_TIMER(cluster, s->g->n);
+    STOP_TIMER(cluster, s->n);
     assert(saved_seed == s->seed);
     return max_size;
 }

@@ -53,6 +53,7 @@ typedef struct
  */
 typedef struct
 {
+    index_t n;             // Number of spins (vertices)
     ising_graph *g;
     spin_t *spins;         // Values of spins (-1, 1) or game states (0, 1)
     double field;          // External field

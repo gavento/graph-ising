@@ -11,6 +11,7 @@ int main()
             .degree = malloc(sizeof(index_t[n])),
         };
     ising_state s = {
+        .n = n,
         .g = &g,
         .spins = malloc(sizeof(spin_t[n])),
         .field = 3,
