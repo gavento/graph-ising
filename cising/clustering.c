@@ -14,8 +14,8 @@
  * Warning: May overflow the stack during recursion.
  */
 static index_t ising_max_cluster_visit(ising_state *s, index_t v, index_t mark,
-    index_t *visited,
-    double edge_prob, ising_cluster_stats *stats)
+                                       index_t *visited,
+                                       double edge_prob, ising_cluster_stats *stats)
 {
     spin_t value = s->spins[v];
     visited[v] = mark;
@@ -28,7 +28,7 @@ static index_t ising_max_cluster_visit(ising_state *s, index_t v, index_t mark,
     for (index_t i = 0; i < s->g->degree[v]; i++)
     {
 
-        index_t u = s->g->neigh_list[s->g->neigh_offset[v] + i];
+        index_t u = s->g->neigh_list[v][i];
 
         if ((edge_prob < 1.0) && (!get_rand_edge_presence(v, u, edge_prob, s->seed)))
         {

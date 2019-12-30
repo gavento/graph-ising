@@ -23,11 +23,12 @@ uint64_t cluster_count;
 
 typedef struct
 {
-    index_t n;             // Number of spins (vertices)
-    index_t m;             // Number of edges 
-    index_t *neigh_list;   // Neighbor lists for all vertices. Every list is degree[v] long.
-    index_t *neigh_offset; // For every node starting offset in neigh_list
-    index_t *degree;       // Node degrees
+    index_t n;              // Number of spins (vertices)
+    index_t m;              // Number of edges 
+    index_t **neigh_list;   // Neighbor lists for all vertices.
+                            // Every list is degree[v] long and has capacity neigh_cap[i].
+    index_t *neigh_cap;     // Capacity of the neighbor lists
+    index_t *degree;        // Node degrees
 } ising_graph;
 
 typedef struct

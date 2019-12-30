@@ -5,11 +5,11 @@ int main()
     const int n = 10000;
 
     ising_graph g = {
-            .n = n,
-            .neigh_list = malloc(sizeof(index_t[30 * n])),
-            .neigh_offset = malloc(sizeof(index_t[n])),
-            .degree = malloc(sizeof(index_t[n])),
-        };
+        .n = n,
+        .neigh_list = malloc(sizeof(index_t * [n])),
+        .neigh_cap = malloc(sizeof(index_t[n])),
+        .degree = malloc(sizeof(index_t[n])),
+    };
     ising_state s = {
         .n = n,
         .g = &g,
@@ -19,16 +19,18 @@ int main()
         .seed = 42,
     };
 
-    uint32_t nlpos = 0;
     for (index_t i = 0; i < n; i++)
     {
         s.spins[i] = 1;
-        s.g->neigh_offset[i] = nlpos;
+        s.g->neigh_list[i] = malloc(sizeof(index_t[n]));
+        s.g->neigh_cap[i] = n;
+        index_t *p = &s.g->neigh_list[i][0];
         for (int d = -10; d <= 10; d++)
         {
             if (d != 0)
             {
-                s.g->neigh_list[nlpos++] = (i + d + n) % n;
+                *p = (i + d + n) % n;
+                p++;
             }
         }
         s.g->degree[i] = 20;

@@ -1,6 +1,5 @@
 #include "lib.h"
 
-
 /*
  * Compute the Hamiltonian of the state.
  */
@@ -14,7 +13,7 @@ double ising_hamiltonian(ising_state *s, double F, double J)
         H -= spin * F;
         for (index_t i = 0; i < s->g->degree[v]; i++)
         {
-            index_t u = s->g->neigh_list[s->g->neigh_offset[v] + i];
+            index_t u = s->g->neigh_list[v][i];
             if (u > v)
             {
                 H -= J * spin * s->spins[u];
@@ -34,7 +33,7 @@ index_t ising_mc_update(ising_state *s, index_t index)
     index_t sum = 0;
     for (index_t i = 0; i < s->g->degree[index]; i++)
     {
-        index_t u = s->g->neigh_list[s->g->neigh_offset[index] + i];
+        index_t u = s->g->neigh_list[index][i];
         sum += s->spins[u];
     }
 

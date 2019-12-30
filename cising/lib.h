@@ -26,13 +26,15 @@ typedef int8_t spin_t;
 
 typedef struct
 {
-    index_t n;             // Number of spins (vertices)
-    index_t m;             // Number of edges 
-    index_t *neigh_list;   // Neighbor lists for all vertices. Every list is degree[v] long.
-    index_t *neigh_offset; // For every node starting offset in neigh_list
-    index_t *degree;       // Node degrees
+    index_t n;            // Number of spins (vertices)
+    index_t m;            // Number of edges
+    index_t **neigh_list; // Neighbor lists for all vertices.
+                          // Every list is degree[v] long and has capacity neigh_cap[i].
+    index_t *neigh_cap;   // Capacity of the neighbor lists
+    index_t *degree;      // Node degrees
 } ising_graph;
 
+/*
 typedef struct
 {
     index_t n;                  // Number of spins (vertices)
@@ -44,6 +46,7 @@ typedef struct
     index_t *in_neigh_offset;   // For every node starting offset in in_neigh_list
     index_t *in_degree;         // Node in-degrees
 } ising_digraph;
+*/
 
 /*
  * Structure describing one ising model state, including the graph.
@@ -53,16 +56,15 @@ typedef struct
  */
 typedef struct
 {
-    index_t n;             // Number of spins (vertices)
+    index_t n; // Number of spins (vertices)
     ising_graph *g;
-    spin_t *spins;         // Values of spins (-1, 1) or game states (0, 1)
-    double field;          // External field
-    double T;              // Temperature
-    rand_t seed;           // Random seed. Modified with computation.
-    index_t spins_up;      // Number of +1 spins (can be absolute or relative, updated only +-1).
-    index_t updates;       // Attempted spin updates
+    spin_t *spins;    // Values of spins (-1, 1) or game states (0, 1)
+    double field;     // External field
+    double T;         // Temperature
+    rand_t seed;      // Random seed. Modified with computation.
+    index_t spins_up; // Number of +1 spins (can be absolute or relative, updated only +-1).
+    index_t updates;  // Attempted spin updates
 } ising_state;
-
 
 /* 
  * cising.c *********************************************************

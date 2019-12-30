@@ -28,23 +28,28 @@ class IsingGraph:
             offsets[vi] += 1
         assert all(offsets == self.degree_sum)
 
-        self._ising_graph = self._get_ising_graph()
+        self.make_ising_graph()
 
     def get_ising_graph(self):
         return self._ising_graph
 
-    def _get_ising_graph(self):
+    def make_ising_graph(self):
         assert self.neigh_list.dtype == 'int32'
-        assert self.neigh_offset.dtype == 'int32'
         assert self.degree.dtype == 'int32'
-        assert self.degree_sum.dtype == 'int32'
+        nlist_ptr = ffi.cast("int32_t *", self.neigh_list.ctypes.data)
+        deg_ptr = ffi.cast("int32_t *", self.degree.ctypes.data)
 
-        return ffi.new(
-            "ising_graph *", {
+        self._ising_graph_lists = ffi.new("int32_t*[{}]".format(self.n))
+        for i in range(self.n):
+            self._ising_graph_lists[i] = nlist_ptr + self.neigh_offset[i]
+
+        self._ising_graph = ffi.new(
+            "ising_graph *",
+            {
                 "n": self.n,
-                "neigh_list": ffi.cast("int32_t *", self.neigh_list.ctypes.data),
-                "neigh_offset": ffi.cast("int32_t *", self.neigh_offset.ctypes.data),
-                "degree": ffi.cast("int32_t *", self.degree.ctypes.data),
+                "neigh_list": self._ising_graph_lists,
+                "neigh_cap": deg_ptr,
+                "degree": deg_ptr,
                 #"degree_sum": ffi.cast("int32_t *", self.degree_sum.ctypes.data),
             })
 
