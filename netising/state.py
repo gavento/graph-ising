@@ -1,9 +1,13 @@
 import copy
 import random
+import sys
 
 import attr
+import networkx as nx
 import numpy as np
 import tqdm
+
+from .ising_graph import IsingGraph
 
 
 @attr.s
@@ -67,3 +71,28 @@ class State:
                 state.mc_updates(max(int(time / samples * state.n), 1))
                 spl[ti, si] = state.get_order()
         return spl
+
+    def set_spins(self, spins):
+        spins = np.array(spins, dtype='int8')
+        assert spins.shape == self.spins.shape
+        self.spins = spins
+        self.spins_up = np.sum((self.spins + 1) // 2)
+
+
+class GraphState(State):
+
+    def __init__(self, graph, spins, seed=None):
+        self.set_graph(graph)
+        if spins is None:
+            spins = np.full([self.graph.order()], -1, dtype='int8')
+        super().__init__(spins=spins, seed=seed)
+
+    def set_graph(self, graph):
+        if isinstance(graph, IsingGraph):
+            self.graph = graph.graph
+            self.cgraph = graph
+        elif isinstance(graph, nx.Graph):
+            self.graph = graph
+            self.cgraph = IsingGraph(graph)
+        else:
+            raise TypeError("Only nx.Graph or WrappedGraph accepted.")
