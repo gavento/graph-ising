@@ -4,13 +4,14 @@ int main()
 {
     const int n = 10000;
 
-    ising_state s = {
-        .g = {
+    ising_graph g = {
             .n = n,
             .neigh_list = malloc(sizeof(index_t[30 * n])),
             .neigh_offset = malloc(sizeof(index_t[n])),
             .degree = malloc(sizeof(index_t[n])),
-        },
+        };
+    ising_state s = {
+        .g = &g,
         .spins = malloc(sizeof(spin_t[n])),
         .field = 3,
         .T = 15.,
@@ -21,15 +22,15 @@ int main()
     for (index_t i = 0; i < n; i++)
     {
         s.spins[i] = 1;
-        s.g.neigh_offset[i] = nlpos;
+        s.g->neigh_offset[i] = nlpos;
         for (int d = -10; d <= 10; d++)
         {
             if (d != 0)
             {
-                s.g.neigh_list[nlpos++] = (i + d + n) % n;
+                s.g->neigh_list[nlpos++] = (i + d + n) % n;
             }
         }
-        s.g.degree[i] = 20;
+        s.g->degree[i] = 20;
     }
 
     ising_cluster_stats stats;

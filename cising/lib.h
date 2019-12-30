@@ -53,7 +53,7 @@ typedef struct
  */
 typedef struct
 {
-    ising_graph g;
+    ising_graph *g;
     spin_t *spins;         // Values of spins (-1, 1) or game states (0, 1)
     double field;          // External field
     double T;              // Temperature
