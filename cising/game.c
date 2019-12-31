@@ -40,17 +40,14 @@ index_t ising_game_mc_update(ising_game_state *s, index_t index)
 {
     index_t flipped = 0;
 
-    index_t sum = 0;
+    double deltaE = -2.0 * s->states[index] * s->field;
     for (index_t i = 0; i < s->g->degree[index]; i++)
     {
         index_t u = s->g->neigh_list[index][i];
-        sum += s->states[u];
+        deltaE -= 2.0 * (*s->game)[s->states[index]][s->states[u]][0];
     }
-    double deltaE = -2.0 * s->states[index] * (s->field + sum);
-
     if (deltaE > 0)
     {
-        s->states[index] = 1 - s->states[index];
         flipped = 1;
     }
     else
@@ -59,14 +56,15 @@ index_t ising_game_mc_update(ising_game_state *s, index_t index)
         assert(p < 1.0);
         assert(p >= 0.0);
         if (p < exp(deltaE / s->T))
-        {
-            s->states[index] = 1 - s->states[index];
             flipped = 1;
-        }
     }
+    // printf("Updating %d from %d: flip=%d, deltaE=%.2f\n", index, s->states[index], flipped, deltaE);
 
     if (flipped)
+    {
+        s->states[index] = 1 - s->states[index];
         s->states_1 += 2 * s->states[index] - 1;
+    }
     s->updates += 1;
 
     return flipped;

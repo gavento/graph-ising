@@ -1,5 +1,16 @@
 #include "lib.h"
 
+int check_symmetry(ising_game_def *game)
+{
+    for (int p0 = 0; p0 < 2; p0++)
+        for (int p1 = 0; p1 < 2; p1++)
+            if ((*game)[p0][p1][0] != (*game)[p1][p0][1]) {
+                fprintf(stderr, "mismatch at %d %d", p0, p1);
+                return 1;
+            }
+    return 0;
+}
+
 int main()
 {
     const int n = 4;
@@ -14,15 +25,19 @@ int main()
         .degree = ds,
     };
 
-    double game[2][2][2] = {{{0, 0}, {0, 0}},{{0, 0}, {0, 0}}};
+    // Prisoner's dilemma, 0=defect
+    double game[2][2][2] = {{{1, 1}, {5, 0}}, {{0, 5}, {3, 3}}};
+    assert(game[0][1][0] == 5);
+    assert(check_symmetry(&game) == 0);
+    
     spin_t sps[] = {0, 0, 1, 1};
     ising_game_state s = {
         .n = n,
         .game = &game,
         .g = &g,
         .states = sps,
-        .field = 3.,
-        .T = 15.,
+        .field = .5,
+        .T = 2.,
         .seed = 42,
         .states_1 = 2,
     };

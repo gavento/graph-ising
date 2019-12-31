@@ -1,5 +1,6 @@
 *.so
-/cising/test1
+/cising/test_ising
+/cising/test_game
 /.vscode
 /logs
 *.json.bz2
